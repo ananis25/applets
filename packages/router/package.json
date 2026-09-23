@@ -1,0 +1,21 @@
+{
+  "name": "@applets/router",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The primary script: ingress, auth, the admin API and one Supervisor per applet.",
+  "type": "module",
+  "scripts": {
+    "test": "vp test --passWithNoTests"
+  },
+  "dependencies": {
+    "@applets/api": "*",
+    "@better-auth/mcp": "^1.7.5",
+    "@effect/sql-d1": "4.0.0-rc.117",
+    "better-auth": "^1.7.5",
+    "effect": "4.0.0-rc.117",
+    "postal-mime": "^3.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260910.1"
+  }
+}

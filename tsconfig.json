@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "paths": {
+      "@std": ["./packages/std/src/index.ts"]
+    },
+    "types": ["@cloudflare/workers-types"],
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "esModuleInterop": true
+  },
+  "files": [],
+  "include": []
+}

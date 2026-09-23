@@ -1,0 +1,17 @@
+{
+  "name": "@applets/std",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The library applets import: sql, kv, blob, log and page.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vp test --passWithNoTests"
+  },
+  "devDependencies": {
+    "@applets/api": "*",
+    "@cloudflare/workers-types": "^5.20260910.1"
+  }
+}

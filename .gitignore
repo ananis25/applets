@@ -1,0 +1,39 @@
+
+!.env.example
+!.vscode/extensions.json
+!.vscode/settings.json
+# Editor directories and files
+# Logs
+# dotenv environment variable files
+*.local
+*.log
+*.njsproj
+*.ntvs*
+*.sln
+*.suo
+*.sw?
+.DS_Store
+.claude/worktrees/
+.env
+.env.*
+.idea
+.vscode/*
+dist
+dist-ssr
+lerna-debug.log*
+/logs
+node_modules
+node_modules/
+npm-debug.log*
+pnpm-debug.log*
+secrets.env
+yarn-debug.log*
+yarn-error.log*
+.vite-hooks/_/
+
+wrangler.local.jsonc
+.dev.vars
+.wrangler*/
+
+__screenshots__/
+.vitest-attachments/

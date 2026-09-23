@@ -1,0 +1,30 @@
+@import "@applets/ui/globals.css";
+
+@theme {
+  --animate-loading: loading 1s ease-in-out infinite;
+  --animate-appear: appear 0s linear 150ms both;
+
+  @keyframes appear {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes loading {
+    from {
+      translate: -100%;
+    }
+    to {
+      translate: 300%;
+    }
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}

@@ -1,0 +1,18 @@
+// The editor: a static page that edits and deploys applet source. The entry
+// only serves assets; the router forwards the editor hostname to it over a
+// service binding and answers `/api/` there with the admin API. `vp run deploy`
+// runs the Vite build into `dist/` and deploys this together with the router.
+{
+  "name": "applets-editor",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-09-01",
+  // reached only over the router's service binding, so no public URL of its own
+  "workers_dev": false,
+  "preview_urls": false,
+  // a missing path is answered by the worker: index.html for a deep link, 404 for a chunk that is gone
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "none",
+  },
+}

@@ -1,0 +1,29 @@
+// The router: ingress, auth, the admin API and one Supervisor Durable Object
+// per applet. Static and committed. `vp run deploy` writes a copy as
+// `wrangler.local.jsonc` with the route, and deploys that. The D1 binding has no
+// id: wrangler creates the database and the bucket on the first deploy, and
+// finds them by name after that.
+{
+  "name": "applets-router",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // `docs.ts` imports the docs as text for the MCP server's `read_docs`.
+  "rules": [{ "type": "Text", "globs": ["**/*.md"], "fallthrough": true }],
+  "worker_loaders": [{ "binding": "LOADER" }],
+  "d1_databases": [
+    { "binding": "REGISTRY", "database_name": "applets-registry", "migrations_dir": "migrations" },
+  ],
+  "r2_buckets": [{ "binding": "APPLET_BLOBS", "bucket_name": "applets-blobs" }],
+  "send_email": [{ "name": "MAILER" }],
+  "durable_objects": {
+    "bindings": [{ "name": "SUPERVISOR", "class_name": "Supervisor" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Supervisor"] }],
+  "services": [
+    { "binding": "BUNDLER", "service": "applets-bundler", "entrypoint": "Bundler" },
+    { "binding": "EDITOR", "service": "applets-editor" },
+  ],
+  "triggers": { "crons": ["*/10 * * * *"] },
+  "observability": { "logs": { "enabled": true } },
+}

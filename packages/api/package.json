@@ -1,0 +1,20 @@
+{
+  "name": "@applets/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The admin API contract: one HttpApi the router implements and the editor and the CLI call.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./capabilities": "./src/capabilities.ts"
+  },
+  "scripts": {
+    "test": "vp test --passWithNoTests"
+  },
+  "dependencies": {
+    "effect": "4.0.0-rc.117"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260910.1"
+  }
+}
