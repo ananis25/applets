@@ -40,3 +40,8 @@ Deploying an applet needs no toolchain on the host at all.
 # Docs
 
 Beyond this file: [docs/applets.md](docs/applets.md) is how to write an applet, [docs/platform.md](docs/platform.md) is how to use a deployment, [docs/development.md](docs/development.md) is how to develop and deploy the platform, and [docs/architecture.md](docs/architecture.md) is how the platform is built and why.
+
+# Credits
+
+- [Val Town](https://www.val.town/) - this repo is pretty much an imitation
+- [Dillon Mulroy's Anti-slop skill](https://github.com/dmmulroy/anti-slop) - I am not a natural in the JS/TS land, and it has been very useful keeping code comprehensible.
