@@ -51,7 +51,10 @@ function App() {
     <main class="max-w-md mx-auto px-4 py-12 font-sans text-neutral-900">
       <h1 class="text-2xl font-bold mb-2">Contact form</h1>
       <p class="text-neutral-600 mb-6">Submissions are saved to this applet's SQLite database.</p>
-      <form onSubmit={(event) => void submit(event)} class="flex flex-col gap-4 bg-white p-6 rounded-lg shadow">
+      <form
+        onSubmit={(event) => void submit(event)}
+        class="flex flex-col gap-4 bg-white p-6 rounded-lg shadow"
+      >
         <label class="flex flex-col gap-1">
           <span class="text-sm font-medium">Name</span>
           <input {...field("name")} />
@@ -65,7 +68,10 @@ function App() {
           <textarea rows={4} {...field("message")} />
         </label>
         {error && <p class="text-sm text-red-600">{error}</p>}
-        <button type="submit" class="bg-blue-600 text-white rounded px-4 py-2 font-medium hover:bg-blue-700">
+        <button
+          type="submit"
+          class="bg-blue-600 text-white rounded px-4 py-2 font-medium hover:bg-blue-700"
+        >
           Send
         </button>
       </form>

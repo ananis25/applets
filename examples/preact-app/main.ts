@@ -4,7 +4,9 @@ import { Hono } from "npm:hono@4";
 
 const app = new Hono();
 
-app.get("/api/greeting", (c) => c.json({ greeting: `Hello from the server at ${new Date().toISOString()}` }));
+app.get("/api/greeting", (c) =>
+  c.json({ greeting: `Hello from the server at ${new Date().toISOString()}` }),
+);
 
 app.get("*", () => page({ title: "Preact app" }));
 

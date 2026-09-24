@@ -6,7 +6,7 @@ import { GlobalRail, RailFrame } from "./rail.tsx";
 export function Shell({ children }: { children: ReactNode }) {
   return (
     <RailFrame>
-      <title>applets</title>
+      <title>Applets</title>
       <GlobalRail />
       <main className="min-w-0 flex-1 overflow-auto">{children}</main>
     </RailFrame>

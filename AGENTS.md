@@ -9,7 +9,7 @@
 
 ## This is a playground
 
-This is a personal project, optimized for simplicity. It is not a product: one deployment serves its admin and a few people they know, and nobody else runs it. 
+This is a personal project, optimized for simplicity. It is not a product: one deployment serves its admin and a few people they know, and nobody else runs it.
 
 That changes what good engineering looks like here:
 

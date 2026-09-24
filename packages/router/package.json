@@ -13,6 +13,7 @@
     "@effect/sql-d1": "4.0.0-rc.117",
     "better-auth": "^1.7.5",
     "effect": "4.0.0-rc.117",
+    "lucide": "^1.48.0",
     "postal-mime": "^3.0.0"
   },
   "devDependencies": {

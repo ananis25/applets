@@ -121,7 +121,11 @@ function Composer({
           class="max-h-48 flex-1 resize-none border-0 bg-transparent py-1.5 font-[inherit] text-[inherit] outline-none"
         />
         {busy ? (
-          <button type="button" class={`${button} !border-stone-900 !bg-stone-900 !text-white`} onClick={onStop}>
+          <button
+            type="button"
+            class={`${button} !border-stone-900 !bg-stone-900 !text-white`}
+            onClick={onStop}
+          >
             Stop
           </button>
         ) : (

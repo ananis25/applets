@@ -15,6 +15,7 @@ import { Bucket, Editor, Supervisors, Vars } from "./bindings.ts";
 import { verifyBlobDownload } from "./blobDownload.ts";
 import { Caller } from "./caller.ts";
 import { depthHeader } from "./egress.ts";
+import { faviconOf } from "./favicon.ts";
 import { AppletFetch, serve as mcp } from "./mcp.ts";
 import { log } from "./platformLog.ts";
 import { can, isCrossOrigin, isCrossOriginSessionWrite, type Member } from "./policy.ts";
@@ -229,15 +230,12 @@ const mcpHost = Effect.fn("Ingress.mcp")(function* (request: HttpServerRequest.H
   );
 });
 
-/**
- * One icon for every applet host, answered before the applet, so a browser's
- * automatic `/favicon.ico` request never reaches a handler or the `requests`
- * table. An applet that wants its own icon links one at another path.
- */
-const favicon = HttpServerResponse.text(
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="3" fill="#111"/><rect x="4" y="4" width="8" height="8" fill="#ffdc58"/></svg>`,
-  { contentType: "image/svg+xml", headers: { "cache-control": "public, max-age=86400" } },
-);
+/** Answered before the applet, so a browser's automatic request never reaches a handler or the `requests` table. */
+const favicon = (name: string) =>
+  HttpServerResponse.text(faviconOf(name), {
+    contentType: "image/svg+xml",
+    headers: { "cache-control": "public, max-age=86400" },
+  });
 
 /** Runs `work` after the response has gone, under the Worker's `waitUntil`. */
 const later = (work: Effect.Effect<void, never, Registry>) =>
@@ -278,7 +276,7 @@ const appletHost = Effect.fn("Ingress.applet")(function* (
 ) {
   if (!isAppletName(name)) return yield* new NotFound({ message: `no host ${name}` });
 
-  if (pathOf(request) === "/favicon.ico") return favicon;
+  if (pathOf(request) === "/favicon.ico") return favicon(name);
 
   const registry = yield* Registry;
   const applet = Option.getOrUndefined(yield* registry.getApplet(name));

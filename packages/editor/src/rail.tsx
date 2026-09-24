@@ -44,7 +44,7 @@ function Rail({ children }: { children: ReactNode }) {
   return (
     <Sidebar collapsible="none" className="w-48 border-r">
       <SidebarHeader className="gap-0.5 border-b px-4 py-3">
-        <span className="font-semibold">applets</span>
+        <span className="font-semibold">Applets</span>
         <span
           className={`truncate text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}
           title={error?.message ?? me?.email}

@@ -84,7 +84,7 @@ function SignIn() {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader>
-        <CardTitle>Sign in to applets</CardTitle>
+        <CardTitle>Sign in to Applets</CardTitle>
         <CardDescription>
           We email you a link. It works once and expires in an hour.
         </CardDescription>

@@ -121,7 +121,7 @@ export function Screen({
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <title>{`${name} — applets`}</title>
+      <title>{`${name} — Applets`}</title>
       <Topbar name={name} view={view} />
       <RailFrame className="flex-1">
         <AppletRail name={name} version={version} />
