@@ -56,7 +56,7 @@ import {
   runSql,
   runSqlBatch,
 } from "./storage.ts";
-import { isSecretName, targetOf } from "./types.ts";
+import { defaultModel, isSecretName, targetOf } from "./types.ts";
 
 /** Ingress's applet host as the caller, so `applet_fetch` is recorded like any request. Ingress provides it, since it owns that path. */
 export class AppletFetch extends Context.Service<
@@ -338,7 +338,7 @@ const handlers = toolkit.toLayer(
         if (topic === undefined)
           return Effect.succeed({
             text: [
-              `You act as ${caller.email} (${caller.role}). An applet named x answers at https://x${vars.HOST_SUFFIX}.`,
+              `You act as ${caller.email} (${caller.role}). An applet named x answers at https://x${vars.HOST_SUFFIX} and receives mail at x@${vars.HOST_SUFFIX.slice(1)}. The default AI model is ${defaultModel}.`,
               "",
               "Workflow: templates_list and applet_create to start; files_read, then files_edit or applet_deploy to change; applet_fetch or applet_run to exercise; requests_list and logs_list to see what happened. Settings, schedule and rollback are applet_configure.",
               "",

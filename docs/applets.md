@@ -4,17 +4,20 @@
 
 Use when writing any applet; read this first.
 
-An applet is a directory. `main.ts` is the entry. Relative imports work without configuration.
+An applet is a directory. `main.ts` is the entry. Relative imports work without configuration, and `.html`, `.css`, `.svg`, `.md` and `.txt` files import as strings.
 
 `main.ts` exports named handlers, one per way the applet can be called. `fetch` is required; the other two are there when the applet wants them:
 
 ```ts
-export async function fetch(request: Request): Promise<Response> { ... }   // every HTTP request
+import { sql, kv, blob, email, ai, secret, log, page } from "@std";
+import type { InboundEmail, ScheduledEvent } from "@std";
+
+export async function fetch(request: Request): Promise<Response> { ... }     // every HTTP request
 export async function scheduled(event: ScheduledEvent): Promise<void> { ... } // the applet's schedule
 export async function inbox(message: InboundEmail): Promise<void> { ... }     // mail to <applet>@<domain>
 ```
 
-A plain web app exports `fetch` and nothing else. `scheduled` gets `{ cron, scheduledTime }`, the expression that fired and when, so one schedule can branch by time of day; `inbox` gets the parsed message described under Email. Both return nothing: a run that returns has succeeded, a run that throws is recorded as failed with the error.
+`scheduled` and `inbox` return nothing: a run that returns has succeeded, a run that throws is recorded as failed with the error. Everything an applet takes from the platform comes from the one `@std` import above, and each section below covers some of it.
 
 | Shape | Exports | Files |
 | --- | --- | --- |
@@ -23,22 +26,48 @@ A plain web app exports `fetch` and nothing else. `scheduled` gets `{ cron, sche
 | mailbox | `fetch`, `inbox` | `main.ts` |
 | web app | `fetch` | `main.ts`, `client/main.tsx`, optionally `shared/` |
 
-An agent changes an applet through the MCP tools: `files_read` for the source, `files_edit` for a few lines, `applet_deploy` for the complete set, then `applet_fetch` to call it as yourself and `requests_list` and `logs_list` to see the run. Every deploy is one atomic version, and `applet_configure` rolls back to an earlier one.
-
-Whether anything calls `scheduled` or `inbox` is a setting, not source: the applet's schedule and its email switch live in the registry beside visibility and egress, changed in the editor's Settings page or with `applet_configure`, so they take effect without a deploy and a redeploy never resets them. The code and the settings are checked against each other only at run time: a schedule on an applet with no `scheduled` export, or mail to one with no `inbox`, is a failed run on the Requests page saying so.
-
-Everything an applet takes from the platform comes from one import, and each section below covers some of it:
+An applet named `x` answers at `https://x<suffix>` and receives mail at `x@<domain>`; `help()` gives the suffix. Derive both from the request rather than writing them into the source:
 
 ```ts
-import { sql, kv, blob, email, ai, secret, log, page } from "@std";
-import type { InboundEmail, ScheduledEvent } from "@std";
+const url = new URL(request.url);                       // https://x.example.com/path
+const [name, ...domain] = url.hostname.split(".");
+const address = `${name}@${domain.join(".")}`;          // x@example.com
+const sibling = `${url.protocol}//other.${domain.join(".")}`;
 ```
+
+Whether anything calls `scheduled` or `inbox` is a setting, not source: the schedule and the email switch are changed with `applet_configure` or on the editor's Settings page, take effect without a deploy, and survive a redeploy. Code and settings meet only at run time: a schedule on an applet with no `scheduled` export, or mail to one with no `inbox`, is a failed run in `requests_list` saying so.
+
+### The workflow
+
+1. `templates_list`, then `applet_create` with a template and any files to lay over it. `applet_deploy` to a new name also creates an applet.
+2. `files_read` for the source, `files_edit` for a few lines, `applet_deploy` for the complete file set. Each is one atomic version; `applet_configure` rolls back.
+3. `applet_fetch` for an HTTP request as yourself, `applet_run` to fire `scheduled` now.
+4. `requests_list` for every run with its status and error, `logs_list` for the lines it wrote.
+
+A change is not done until step 4 shows it working. A build that breaks a rule below refuses the deploy with a message naming the file, and the version that was live stays live.
+
+### Rules
+
+The build refuses:
+
+- `main.ts` importing from `client/`, or `client/` importing `@std`
+- a third-party import without the `npm:` prefix, or any `http:` or `https:` import
+- two different version ranges for one package
+- a dynamic `import()` of an `npm:` specifier
+
+The runtime holds to:
+
+- `sql` and `kv` are synchronous: no `await`, and a handler that only touches them is atomic
+- `blob`, `email`, `ai` and outbound `fetch()` are asynchronous, and any `await` on them lets another request in
+- a run has 10 seconds of CPU and 100 subrequests, and cannot hold a WebSocket
+- a `fetch()` to another applet reaches only a `public` one; egress `none` blocks every `fetch()` and nothing else
+- `secret("NAME")` throws when unset; `blob.get` and `kv.get` return `undefined` for a missing key
 
 ## Templates
 
 Use when starting an applet from nothing.
 
-A template is a complete applet to start from, one of the examples under `examples/` in the repository. `templates_list` describes them, `applet_create` takes one by name and lays any `files` given over its own, and the editor's New applet dialog offers the same list with one preselected. A template is optional: `applet_deploy` creates an applet from a complete file set when its name is new. The applet is then edited like any other: `files_read` shows what it got, `files_edit` changes lines in place, `applet_deploy` replaces the whole set. A new applet's description is the docstring at the top of its `main.ts`.
+A template is a complete applet to start from. `templates_list` describes them, `applet_create` takes one by name and lays any `files` given over its own. A template is optional: `applet_deploy` creates an applet from a complete file set when its name is new. A new applet's description is the docstring at the top of its `main.ts`.
 
 | Template | Shape | Shows |
 | --- | --- | --- |
@@ -48,131 +77,311 @@ A template is a complete applet to start from, one of the examples under `exampl
 | `chat` | web app with AI | `ai.stream` piped to the browser as a streamed response, and a `shared/` module |
 | `mailbox` | web app with mail | an `inbox` export, `email.send`, and a Preact client over `/api` routes |
 
+For a JSON API, a webhook or a scheduled job, start from `basic-html` or deploy a single `main.ts`: the web templates only add a client.
+
 ## Web pages and apps
 
 Use when the applet serves a page with its own browser code.
 
-`main.ts` is the server entry and `client/main.tsx` or `client/main.ts` is the browser entry, bundled for the browser with Preact's automatic JSX. Three rules, checked by the bundler:
+`main.ts` is the server entry and `client/main.tsx` or `client/main.ts` is the browser entry. The build bundles the client with Preact's automatic JSX, embeds it in the server module and serves it at `/main.js`, which is what `page({ title })` loads. There is no build step to configure and no static file directory: a file the page needs is imported as text and returned from a route.
 
-- `main.ts` must never import from `client/`
-- `client/` must never import `@std`
-- `shared/` may be imported by both
+```ts
+// main.ts
+import { page } from "@std";
+import { Hono } from "npm:hono@4";
 
-The client bundle is embedded in the server module as a string and served by the generated entry at `/main.js`, which is what `@std`'s `page({ title })` points at.
+const app = new Hono();
 
-- `page({ title })` returns the HTML shell that loads `/main.js`
+app.get("/api/greeting", (c) => c.json({ greeting: "hello" }));
+app.get("*", () => page({ title: "Greeter" }));   // the HTML shell: <div id="app"> and /main.js
+
+export const fetch = app.fetch;   // Hono: export app.fetch, never app
+```
+
+```tsx
+// client/main.tsx
+import { render } from "npm:preact";
+import { useEffect, useState } from "npm:preact/hooks";
+
+function App() {
+  const [greeting, setGreeting] = useState("…");
+
+  useEffect(() => {
+    fetch("/api/greeting").then((r) => r.json()).then((b: { greeting: string }) => setGreeting(b.greeting));
+  }, []);
+
+  return <h1>{greeting}</h1>;
+}
+
+render(<App />, document.getElementById("app")!);
+```
+
+Without a framework, a plain page imports its own HTML and serves it, with `client/main.ts` as the script:
+
+```ts
+import html from "./index.html";   // holds <script type="module" src="/main.js">
+import css from "./style.css";
+
+export function fetch(request: Request): Response {
+  if (new URL(request.url).pathname === "/style.css")
+    return new Response(css, { headers: { "content-type": "text/css; charset=utf-8" } });
+
+  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+}
+```
+
+Types shared by both sides go in `shared/`, which either may import. `page({ title, script })` takes another script path when the shell should load something other than `/main.js`.
+
+### Rules
+
+- `main.ts` never imports from `client/`; `client/` never imports `@std`; `shared/` is for both
+- the client talks to the server over routes the applet defines, `/api/...` by convention, on the same origin, so no CORS is needed
+- `npm:` packages work in `client/` as on the server, bundled for the browser
+- a request to the applet is the whole page: there is no separate asset host, so `fetch("/api/x")` in the browser is the same applet
 
 ## Storage
 
 Use when the applet keeps data between requests.
 
-Every applet has state. Storage is the facet's own SQLite, reached through `@std`, and the applet never declares it.
+Every applet has its own SQLite database, reached through `sql` and `kv`, and its own blob store through `blob`. Nothing is declared: the first statement creates the table. All three survive new versions and rollbacks, and are removed with the applet.
 
-SQLite and key-value storage run synchronously inside the applet's own Durable Object; blobs are asynchronous:
-
-- `sql.execute(statement)` runs one statement and returns `{ rows, rowsAffected, lastInsertRowid }`, rows as records. A failure throws `SqlError` naming the statement. `sql.batch(statements)` runs several in one transaction
-- `kv.get(key)`, `kv.set(key, value)`, `kv.delete(key)` and `kv.list({ prefix, limit })` live in the same SQLite file as `sql`. Values are anything structured clone can carry. Rule of thumb: `kv` for settings, cursors and caches, `sql` for anything you will query
-
-`blob` stores larger values in the router's `applets-blobs` R2 bucket. A scoped `Blobs` capability keeps each applet's keys private. Values survive new versions and rollbacks.
+`sql` and `kv` are synchronous. Rows come back as records:
 
 ```ts
-await blob.setJSON("settings", { theme: "dark" });
-const settings = await blob.getJSON<{ theme: string }>("settings");
+import { sql, kv } from "@std";
 
-await blob.set("files/greeting.txt", "hello");
-const file = await blob.get("files/greeting.txt");
-const keys = await blob.list("files/");
-await blob.delete("files/greeting.txt");
+type Note = { id: number; body: string; created_at: string };
+
+const setup = `CREATE TABLE IF NOT EXISTS notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')))`;
+
+export async function fetch(request: Request): Promise<Response> {
+  sql.execute(setup);                                            // idempotent, run it on every request
+
+  if (request.method === "POST") {
+    const { body } = await request.json<{ body: string }>();
+    const { lastInsertRowid } = sql.execute({ sql: "INSERT INTO notes (body) VALUES (?)", args: [body] });
+    kv.set("last-note", lastInsertRowid);
+
+    return Response.json({ id: lastInsertRowid });
+  }
+
+  const { rows } = sql.execute<Note>("SELECT id, body, created_at FROM notes ORDER BY id DESC");
+  const last = kv.get<number>("last-note");                      // undefined when unset
+
+  return Response.json({ notes: rows, last });
+}
 ```
 
-`get` returns a `Response`, ready to return from a handler or read with `.text()`, `.json()` or `.arrayBuffer()`. `get` and `getJSON` return `undefined` for missing keys. `set` accepts text, bytes, a `Blob` or a stream, and an optional `{ contentType }`. Writes replace existing values. `list({ prefix, limit })` returns `{ keys, truncated }`, keys in sorted order, at most `limit` of them, 1000 by default. Deleting a missing key succeeds. Storage errors propagate to the caller.
+- `sql.execute(statement)` takes a string or `{ sql, args }` and returns `{ rows, rowsAffected, lastInsertRowid }`. A failure throws `SqlError`, whose message includes the statement
+- `sql.batch([...statements])` runs several in one transaction; the first failure rolls back all of them
+- `kv.get(key)`, `kv.set(key, value)`, `kv.delete(key)` and `kv.list({ prefix, limit })`, which returns `[key, value]` pairs. Values are anything structured clone can carry
+- `kv` for settings, cursors and caches; `sql` for anything you will query
 
-The capability is a `WorkerEntrypoint` with plain methods, like `Logs`. Values cross the RPC boundary as bytes, not a stream, so a blob is held in memory on both sides. Streaming over RPC is a later improvement. Keep blobs to a few megabytes.
+`blob` is asynchronous object storage for larger values, files and images:
 
-Storage is reachable from outside the applet too. The editor has a page per store, and the MCP tools are `sql_read` and `sql_write` for statements, `kv_list`, `kv_get`, `kv_put` and `kv_remove` for entries with values as JSON text, and `blobs_list`, `blobs_get`, `blobs_put` and `blobs_remove` for blobs. `blobs_put` takes text or base64, while `blobs_get` returns readable text and a five-minute download link for the original bytes. That is how a table gets created, a setting seeded, or an image the applet serves put in without code to upload it.
+```ts
+import { blob } from "@std";
 
-Deleting an applet also removes its blobs.
+await blob.setJSON("settings", { theme: "dark" });
+const settings = (await blob.getJSON<{ theme: string }>("settings")) ?? { theme: "light" };
 
-### The concurrency model
+await blob.set("images/logo.png", bytes, { contentType: "image/png" });
+const file = await blob.get("images/logo.png");     // a Response, or undefined
+if (file !== undefined) return file;                 // serve it as is, or file.text(), .json(), .arrayBuffer()
 
-A Durable Object runs one event at a time and gates input while storage is in flight:
+const { keys, truncated } = await blob.list({ prefix: "images/", limit: 100 });
+await blob.delete("images/logo.png");
+```
 
-- `sql.execute` is synchronous and runs immediately. A select after an insert sees the row
-- while the object is executing storage-only code, no other request, alarm or RPC is delivered. A handler that only touches its database is atomic from entry to exit
-- an await on anything else, such as an outbound `fetch()`, lets another request in at that point. Re-read after such an await
-- writes are confirmed once per response: the response is held until the storage it depends on is durable
+`set` accepts text, bytes, a `Blob` or a stream and replaces an existing value. `list` returns keys in sorted order, 1000 by default. Deleting a missing key succeeds. Keep a blob to a few megabytes: it is held in memory on the way in and out.
 
-So an applet handler should do its database work in straight-line sync code and do network calls before or after it.
+From outside the applet, `sql_read` and `sql_write` run statements, `kv_list`, `kv_get`, `kv_put` and `kv_remove` handle entries with values as JSON text, and `blobs_list`, `blobs_get`, `blobs_put` and `blobs_remove` handle blobs. `blobs_put` takes text or base64, and `blobs_get` returns readable text and a five-minute download link for the original bytes. That is how a table gets created, a setting seeded, or an image the applet serves put in without code to upload it. The editor has a page per store.
+
+### Rules
+
+- always pass values as `args`; never interpolate them into SQL
+- `CREATE TABLE IF NOT EXISTS` at the top of the handler, so setup is idempotent and a fresh applet works on its first request. Add columns with `ALTER TABLE ... ADD COLUMN` in a `try/catch`
+- do database work in straight-line synchronous code. A handler that only touches `sql` and `kv` is atomic from entry to exit; an `await` on `fetch()`, `blob`, `ai` or `email` lets another request in, so re-read after it
+- a select after an insert sees the row, and the response is held until the writes it made are durable
+- `getJSON` and `get` return `undefined` for a missing key; default it rather than checking existence first
 
 ## Schedules
 
 Use when the applet runs on a timer.
 
-An applet has one schedule, set on its Settings page or with `applet_configure`. The supervisor owns it: setting the expression stores it in the supervisor and arms a Durable Object alarm for the next occurrence, and the alarm calls the applet's `scheduled` export, then rearms. Expressions are five fields, minute resolution, UTC, parsed by Effect's `Cron` module; the settings refuse one it rejects. 'run now' on the Settings page and `applet_run` call `scheduled` at once with the same event. Two jobs on different timers are one expression that covers both and a branch on `event.scheduledTime`. The Requests page records scheduled, manual and email runs with their status, duration and any error.
+An applet has one schedule, a five-field cron expression at minute resolution, set with `applet_configure` or on its Settings page. Expressions run in UTC: convert "9am Eastern" to UTC before writing it, and pick a time that is close enough year-round, since daylight saving is not handled. The settings refuse an expression they cannot parse.
+
+Two jobs on different timers are one expression that covers both and a branch on the event. `sendDigest`, `fetchItemsBetween` and `handle` are the applet's own functions:
+
+```ts
+import { kv, log, type ScheduledEvent } from "@std";
+
+// schedule: 0 * * * *
+export async function scheduled(event: ScheduledEvent): Promise<void> {
+  const hour = event.scheduledTime.getUTCHours();   // event.cron is the expression that fired
+
+  if (hour === 9) await sendDigest();
+  await poll();
+}
+
+async function poll(): Promise<void> {
+  const since = kv.get<string>("polled-at") ?? new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const until = new Date().toISOString();
+  const items = await fetchItemsBetween(since, until);
+  for (const item of items) handle(item);
+  kv.set("polled-at", until);
+  log.info("polled", { since, count: items.length });
+}
+```
+
+Keep the cursor in `kv` and query through that cutoff, so items arriving during the fetch wait for the next run.
+
+### Rules
+
+- `applet_run` fires `scheduled` now with the same event; use it to test rather than waiting for the timer
+- a run that throws is a failed row in `requests_list` with the error; a run that returns is a success, so `log` anything worth seeing later
+- a schedule on an applet with no `scheduled` export is a failed run saying so
+- the schedule survives redeploys and rollbacks; only `applet_configure` changes it
 
 ## Email
 
 Use when the applet sends mail, or runs when mail arrives.
 
-- `email.send({ to, subject, text, html, replyTo })` sends from `<applet>@<domain>` and returns the message id; `email.attachment(emailId, attachmentId)` fetches one attachment of a received message as a `Response`
+Mail arrives once the applet's email switch is on, set with `applet_configure`. The applet's address is `<applet>@<domain>`, and `email.send` always sends from it. In this example, `store` is the applet's function for saving an attachment.
 
-Mail arrives once the applet's email setting is on. The message `inbox` gets is `{ id, from, to, cc, subject, text, html, headers, attachments }`, where `id` is one the router mints and attachments carry `{ id, filename, contentType, size }` only. Bytes come on demand through `email.attachment(message.id, attachment.id)`, which reads them from the blobs bucket under `_email/<applet>/`, a prefix no applet's own keys can reach.
+```ts
+import { email, log, sql, type InboundEmail } from "@std";
 
-Two things to know. Outbound mail to anyone but a verified destination address counts against the Workers Paid quota, 3,000 a month; inbound mail is free. And anyone on the internet who knows an address can run `inbox`, so treat `message.from` as untrusted input, like a webhook body.
+// InboundEmail: { id, from, to: string[], cc: string[], subject, text: string | null, html: string | null,
+//                 headers: Record<string, string>, attachments: { id, filename, contentType, size }[] }
+export async function inbox(message: InboundEmail): Promise<void> {
+  log.info("received", { from: message.from, subject: message.subject });
 
-Received mail is delivered at most once: a failed handler is not retried, and the sender gets no bounce.
+  for (const attachment of message.attachments) {
+    const file = await email.attachment(message.id, attachment.id);   // a Response with the bytes
+    await store(attachment.filename, await file.arrayBuffer());
+  }
+
+  const id = await email.send({
+    to: message.from,
+    subject: `Re: ${message.subject}`,
+    text: "Got it, thanks.",
+  });
+  log.info("replied", { id });
+}
+```
+
+`email.send({ to, subject, text, html, replyTo })` returns the message id and throws when the mailer refuses it. Attachments of a received message are metadata only; the bytes come on demand through `email.attachment(message.id, attachment.id)` and stay private to the applet.
+
+### Rules
+
+- anyone on the internet who knows the address can run `inbox`, so treat `message.from` and the body as untrusted, like a webhook body
+- delivery is at most once: a failed handler is not retried, and the sender gets no bounce
+- outbound mail to anyone but a verified destination address counts against a quota of 3,000 a month; inbound is free
+- mail bodies are not kept by the platform: `emails_list` is metadata only, so an applet that wants a message later stores it in `sql`
+- test `inbox` by sending a real message to the address, then `requests_list` and `logs_list`
 
 ## AI
 
 Use when the applet calls a language model.
 
-- `ai.chat({ messages })` returns one chat completion and `ai.stream({ messages })` yields its chunks as they are generated
+`ai` is chat completions in the OpenAI format through [OpenRouter](https://openrouter.ai/docs/api-reference/chat-completion). The request and the response are OpenAI's shapes unchanged, so their documentation applies and any other option, `temperature` or `tools`, passes through. `model` is an OpenRouter model id; without one the platform's default is used, which `help()` names.
 
-`ai` is chat completions in the OpenAI format through [OpenRouter](https://openrouter.ai/docs/api-reference/chat-completion). The request and the response are OpenAI's shapes unchanged, so their documentation applies and any other option, `temperature` or `tools`, passes through. `model` is an OpenRouter model id; without one the router uses its default, `defaultModel` in `packages/router/src/ai.ts`.
+Here `messages` is the applet's conversation and `process` handles each streamed text chunk.
 
 ```ts
+import { ai, page, type ChatMessage } from "@std";
+
 const completion = await ai.chat({ messages: [{ role: "user", content: "hello" }] });
 const text = completion.choices[0]?.message.content;
 
-for await (const chunk of ai.stream({ messages })) chunk.choices[0]?.delta.content;
+for await (const chunk of ai.stream({ messages })) process(chunk.choices[0]?.delta.content ?? "");
 ```
 
-The key never reaches an applet. It is a router secret, and `@std` calls the router's `AI` capability over RPC, like `Email`. The capability makes the request and returns OpenRouter's body as a `Response`, JSON or a stream of server-sent events, which `@std` parses inside the applet. A refused request throws with OpenRouter's status and message. OpenRouter can also fail after a stream has started, as an `error` event in a 200 body; `ai.stream` throws on it. Because it is RPC and not `fetch()`, an applet with egress `none` can still call it.
+Streaming to the browser is the stream re-encoded as a text body:
 
-Every call ends as one line in the applet's log, written by the router: `ai chat` with the model OpenRouter resolved, the duration, the finish reason, the usage and OpenRouter's generation id, or `ai chat failed` with the reason. For a stream the router reads the events as it forwards them and writes the line when the stream ends, which is the only place a failure mid-stream shows. `@std` sends the run's id with the call, so the line sits under its request on the Logs page.
+```ts
+async function* reply(messages: ChatMessage[]): AsyncGenerator<Uint8Array> {
+  const encoder = new TextEncoder();
+  for await (const chunk of ai.stream({ messages })) yield encoder.encode(chunk.choices[0]?.delta.content ?? "");
+}
 
-An applet cannot read the key but it can spend it, any user's applet included, and a public applet lets anyone do so. The limit is the credit limit set on the key at OpenRouter; nothing here counts calls per applet.
+export async function fetch(request: Request): Promise<Response> {
+  if (new URL(request.url).pathname !== "/api/chat") return page({ title: "chat" });
+
+  const { messages } = await request.json<{ messages: ChatMessage[] }>();
+
+  return new Response(ReadableStream.from(reply(messages)), { headers: { "content-type": "text/plain; charset=utf-8" } });
+}
+```
+
+### Rules
+
+- the key never reaches the applet, and no secret is needed: the platform holds one key for every applet
+- both calls throw when OpenRouter refuses the request, and `ai.stream` throws if OpenRouter fails after the stream has started
+- `ai` works with egress `none`; it is not a `fetch()`
+- every call is one line in `logs_list`, `ai chat` with the model, duration, finish reason and usage, or `ai chat failed` with the reason, under the run that made it
+- a public applet lets anyone spend the shared key, and nothing counts calls per applet; put a guard on a public route that calls `ai`
 
 ## Secrets and logs
 
 Use when the applet needs a key, or to find out what a run did.
 
-- `secret("NAME")` returns one of the applet's own secrets and throws when it is not set. See "Secrets" in [platform.md](platform.md#secrets)
-- `log.info(message, data)` and the other levels print a JSON line, which Workers Logs keeps, and send the payload to the router through `waitUntil`, so the editor's Logs page sees it within a second
+```ts
+import { log, secret } from "@std";
 
-Logs and `requests` rows are kept for 7 days. From outside, `secrets_set` and `secrets_remove` manage secrets and `secrets_list` shows their names; `requests_list` is every run with its status and error, `logs_list` the lines a run wrote, and `emails_list` the metadata for mail sent and received by the applet.
+export async function fetch(request: Request): Promise<Response> {
+  const token = secret("WEBHOOK_TOKEN");                       // throws when not set
+  if (request.headers.get("authorization") !== `Bearer ${token}`) return new Response(null, { status: 401 });
+
+  const body = await request.json<{ event: string }>();
+  log.info("webhook", { event: body.event });                  // levels: debug, info, warn, error
+
+  return Response.json({ ok: true });
+}
+```
+
+An applet's secrets are its owner's: a provider key, a webhook token. `secrets_set` and `secrets_remove` manage them, `secrets_list` shows names only, and a value is never returned once set. Setting one restarts the applet's worker with the new set, storage kept.
+
+`log.<level>(message, data)` writes one structured line, visible in `logs_list` and on the Logs page within a second, under the run that wrote it. `requests_list` is every run, HTTP, scheduled, manual and inbox, with status, duration and the error of a throw; the visitor of a throwing handler gets a plain 500 carrying the run's id, never the error text. `emails_list` is the metadata of mail in and out. All three are kept for 7 days.
+
+### Rules
+
+- a log line can carry a secret; only the owner reads logs, but do not log a secret's value
+- a handler that throws is recorded with its error; a handler that catches and returns 200 is not, so `log.error` what it caught
 
 ## npm packages
 
 Use when the applet imports a third-party package.
 
-Applets import packages as `import { z } from "npm:zod@3"`: the specifier is the dependency declaration, so an applet has no `package.json`. The bundler scans static imports with `es-module-lexer`, falling back to a line-anchored pattern for JSX and TSX, as the Cloudflare worker bundler does. It derives a `package.json`, fetches the packages from the npm registry inside the worker, rewrites the specifiers to bare names, and bundles. Five rules, enforced with a message that names the file:
+The import specifier is the dependency declaration; there is no `package.json` and no lockfile:
 
-- every third-party import must carry the `npm:` prefix
-- `http:` and `https:` imports are an error
-- two different ranges for the same package are an error
-- imports are static: the scanner reads `import` and `export … from` statements only, so a dynamic `import()` of an `npm:` specifier fails in the bundle as unresolved
-- a package must be one the installer can fetch; there is no lockfile, and the installed versions are recorded on the version row
+```ts
+import { Hono } from "npm:hono@4";           // server
+import { z } from "npm:zod@3.23.8";          // exact version pins it
+import { render } from "npm:preact";         // client/ imports the same way
+```
 
-The installer is `@cloudflare/worker-bundler`'s: a flat `node_modules`, no peer dependencies, no `.wasm` or `.node` files. Import a peer with its own `npm:` specifier.
+Packages are installed flat, with no peer dependencies and no `.wasm` or `.node` files. Import a peer with its own `npm:` specifier. A loose range like `npm:zod@3` resolves once and stays pinned while the applet's set of dependencies is unchanged; adding or removing any dependency resolves every loose range again. `applet_get` shows a version's installed packages. To resolve the current set again, pass `fresh: true` to `applet_deploy` or use 're-resolve' on the Settings page.
 
-Installed dependency sets are cached. The bundler has one R2 bucket, `applets-deps`, and stores the `node_modules` tree it built under a hash of the sorted dependency map. A later deploy with the same set restores the tree and never calls the registry. So a loose range like `npm:zod@3` stays pinned only while the applet's dependency set is unchanged: adding or removing a dependency changes the hash and resolves every loose range again. Write an exact version to pin one. A rollback is not affected, since a version row holds the built bundle. To resolve again, deploy with `?fresh`, which is 're-resolve' in the applet's settings: the bundler skips the cached set, installs from npm and replaces the object, so every applet with the same set gets the new tree on its next deploy.
+### Rules
+
+- every third-party import carries the `npm:` prefix; `http:` and `https:` imports are refused
+- one version range per package across the applet; two different ranges are refused
+- imports are static: `import` and `export ... from` only. A dynamic `import()` of an `npm:` specifier fails as unresolved
+- write an exact version to pin a package
 
 ## Limits
 
-Use before relying on the network, CPU time or another applet. [architecture.md](architecture.md) has the reasons.
+Use before relying on the network, CPU time or another applet.
 
 - a request gets 10 seconds of CPU and 100 subrequests, so a loop or a fan-out ends early
-- an applet cannot hold a WebSocket
-- a `fetch()` to another applet's hostname carries no session and no key, so only a `public` applet answers it. Build the target host from your own request URL, so no suffix is written into the applet. A loop of calls fails with 508
+- there is no filesystem; state goes in `sql`, `kv` or `blob`
+- an applet cannot hold a WebSocket; use polling or a streamed response
+- a `fetch()` to another applet's hostname carries no session and no key, so only a `public` applet answers it. Build the target host from your own request URL. A loop of calls between applets fails with 508
 - egress `none` blocks every `fetch()`, another applet's included, and nothing else: `email`, `blob`, `log` and `ai` still work, and `email.send` reaches an outside recipient
+- a source file is at most 1,900,000 bytes, and a blob should stay under a few megabytes
+- `sql` and `kv` are unavailable outside a handler: module-level code cannot touch storage

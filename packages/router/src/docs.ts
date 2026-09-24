@@ -42,7 +42,7 @@ export const topics: Readonly<Record<string, Topic>> = Object.fromEntries([
     "platform",
     {
       title: "The platform",
-      summary: "The whole platform doc: agents, access, secrets and the editor.",
+      summary: "The whole platform doc: agents, access and secrets.",
       text: platform,
     },
   ],
