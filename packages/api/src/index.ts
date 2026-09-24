@@ -430,6 +430,13 @@ const storage = HttpApiGroup.make("storage").add(
     success: HttpApiSchema.StreamUint8Array(),
     error: owned,
   }),
+  HttpApiEndpoint.put("putBlob", "/applets/:name/blob", {
+    params: name,
+    query: { key: Schema.String, content_type: Schema.optional(Schema.String) },
+    payload: Schema.Uint8Array.pipe(HttpApiSchema.asUint8Array()),
+    success: Ok,
+    error: [...owned, BadRequest],
+  }),
   HttpApiEndpoint.delete("removeBlob", "/applets/:name/blob", {
     params: name,
     query: { key: Schema.String },

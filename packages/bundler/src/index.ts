@@ -35,7 +35,12 @@ const stdModule = "applet-std.ts";
 
 const entryModule = "applet-entry.ts";
 
-const jsx = { jsx: "automatic", jsxImportSource: "preact" } as const;
+/** JSX for Preact, and text files imported as strings: `import page from "./index.html"`. */
+const jsx = {
+  jsx: "automatic",
+  jsxImportSource: "preact",
+  loader: { ".html": "text", ".css": "text", ".svg": "text", ".md": "text", ".txt": "text" },
+} as const;
 
 const moduleText = (module: string | { js?: string; text?: string }): string =>
   module instanceof Object ? (module.js ?? module.text ?? "") : module;

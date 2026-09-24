@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@applets/ui/components/ui/button";
 import { Input } from "@applets/ui/components/ui/input";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -15,10 +15,11 @@ const size = (bytes: number): string => {
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 };
 
-/** The applet's blobs by key prefix, a page at a time: download or delete one. */
+/** The applet's blobs by key prefix, a page at a time: upload one under the prefix, download or delete one. */
 export function Blobs({ name }: { name: string }) {
   const client = useQueryClient();
   const [prefix, setPrefix] = useState("");
+  const picker = useRef<HTMLInputElement>(null);
 
   const pages = useInfiniteQuery({
     queryKey: ["applet", name, "blobs", prefix],
@@ -35,8 +36,23 @@ export function Blobs({ name }: { name: string }) {
     onSuccess: () => client.invalidateQueries({ queryKey: ["applet", name, "blobs"] }),
   });
 
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const payload = new Uint8Array(await file.arrayBuffer());
+
+      return call((api) =>
+        api.storage.putBlob({
+          params: { name },
+          query: { key: `${prefix}${file.name}`, content_type: file.type || undefined },
+          payload,
+        }),
+      );
+    },
+    onSuccess: () => client.invalidateQueries({ queryKey: ["applet", name, "blobs"] }),
+  });
+
   const blobs = pages.data?.pages.flatMap((page) => page.blobs);
-  const error = pages.error ?? remove.error;
+  const error = pages.error ?? remove.error ?? upload.error;
 
   return (
     <section className="flex min-w-0 flex-1 flex-col bg-card">
@@ -49,12 +65,28 @@ export function Blobs({ name }: { name: string }) {
           value={prefix}
           onChange={(event) => setPrefix(event.target.value)}
         />
+        <input
+          ref={picker}
+          type="file"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+
+            if (file !== undefined) upload.mutate(file);
+          }}
+        />
         <Button
           variant="outline"
           size="xs"
           className="ml-auto"
-          onClick={() => void pages.refetch()}
+          title="Store a file under the prefix, keyed by its name"
+          disabled={upload.isPending}
+          onClick={() => picker.current?.click()}
         >
+          upload
+        </Button>
+        <Button variant="outline" size="xs" onClick={() => void pages.refetch()}>
           refresh
         </Button>
       </div>

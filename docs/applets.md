@@ -73,6 +73,8 @@ await blob.delete("files/greeting.txt");
 
 The capability is a `WorkerEntrypoint` with plain methods, like `Logs`. Values cross the RPC boundary as bytes, not a stream, so a blob is held in memory on both sides. Streaming over RPC is a later improvement. Keep blobs to a few megabytes.
 
+A blob can also be put from outside the applet: the editor's Blobs page uploads a file, and the MCP tool `put_blob` takes text or base64. That is how an image or a data file the applet serves gets in without code to upload it.
+
 Deleting an applet also removes its blobs.
 
 ### The concurrency model

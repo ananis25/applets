@@ -600,6 +600,29 @@ test("the KV and Blobs pages list the applet's storage and delete from it", asyn
   await expect
     .element(page.getByRole("link", { name: "notes/a.txt" }))
     .toHaveAttribute("href", "/api/applets/hello/blob?key=notes%2Fa.txt");
+
+  table.set("PUT /api/applets/hello/blob?key=notes%2Fb.txt&content_type=text%2Fplain", (body) => {
+    expect(body).toBe("hi");
+
+    return { ok: true };
+  });
+  await page.getByLabelText("Key prefix").fill("notes/");
+  table.set("GET /api/applets/hello/blobs?prefix=notes%2F", () => ({
+    blobs: [
+      { key: "notes/a.txt", size: 2048, content_type: "text/plain", uploaded_at: row.updated_at },
+      { key: "notes/b.txt", size: 2, content_type: "text/plain", uploaded_at: row.updated_at },
+    ],
+    cursor: null,
+  }));
+  await expect.element(page.getByRole("button", { name: "upload" })).toBeVisible();
+  const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+
+  if (input === null) throw new Error("no file input");
+  const transfer = new DataTransfer();
+  transfer.items.add(new File(["hi"], "b.txt", { type: "text/plain" }));
+  input.files = transfer.files;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await expect.element(page.getByRole("link", { name: "notes/b.txt" })).toBeVisible();
 });
 
 test("late storage responses do not replace a new key prefix", async () => {

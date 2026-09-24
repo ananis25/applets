@@ -1,8 +1,8 @@
 /**
  * The owner's view into an applet's storage, behind the editor's SQLite, KV and
  * Blobs pages. SQLite and KV are answered inside the applet's facet through
- * the supervisor; blobs are read straight from the bucket under the applet's
- * prefix.
+ * the supervisor; blobs are read and written straight in the bucket under the
+ * applet's prefix.
  */
 import { api, AppletFailed, BadRequest, KvList, NotFound, SqlResult } from "@applets/api";
 import type { Inspection } from "@applets/api/capabilities";
@@ -15,6 +15,21 @@ import { owned } from "./caller.ts";
 import { targetOf } from "./types.ts";
 
 const blobPageSize = 200;
+
+/** One blob the owner puts in from outside, as the applet's own `blob.set` would. */
+export const putBlob = Effect.fn("Storage.putBlob")(function* (
+  name: string,
+  key: string,
+  body: Uint8Array,
+  contentType: string | undefined,
+) {
+  if (key === "") return yield* new BadRequest({ message: "a blob key is not empty" });
+
+  const applet = yield* owned(name);
+  const bucket = yield* Bucket;
+
+  yield* bucket.put(`${applet.id}/${key}`, body, contentType ?? "application/octet-stream");
+});
 
 const ok = { ok: true } as const;
 
@@ -93,6 +108,8 @@ export const storage = HttpApiBuilder.group(api, "storage", (handlers) =>
           headers: { "content-disposition": `attachment; filename="${filename}"` },
         });
       }),
+    putBlob: ({ params, query, payload }) =>
+      putBlob(params.name, query.key, payload, query.content_type).pipe(Effect.as(ok)),
     removeBlob: ({ params, query }) =>
       Effect.gen(function* () {
         const applet = yield* owned(params.name);

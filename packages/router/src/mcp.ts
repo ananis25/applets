@@ -29,12 +29,12 @@ import { McpProtocol, McpServer, Tool, Toolkit } from "effect/unstable/ai";
 import { HttpRouter } from "effect/unstable/http";
 
 import { deploy, fork, patch, remove } from "./admin.ts";
-import { Bundler, Supervisors, Vars } from "./bindings.ts";
+import { Bucket, Bundler, Supervisors, Vars } from "./bindings.ts";
 import { Caller, owned } from "./caller.ts";
 import { docs } from "./docs.ts";
 import { log } from "./platformLog.ts";
 import { Registry } from "./registry.ts";
-import { inspect } from "./storage.ts";
+import { inspect, putBlob } from "./storage.ts";
 import { isSecretName, targetOf } from "./types.ts";
 
 const { name: _renamed, ...settings } = AppletPatch.fields;
@@ -164,6 +164,22 @@ export const toolkit = Toolkit.make(
     { ...name, prefix: Schema.optional(Schema.String) },
     KvList,
   ),
+  write(
+    "put_blob",
+    "Stores one blob the applet reads with `blob.get(key)`: text as `text`, or bytes such as an image as `base64`, one of the two. Replaces any value at the key.",
+    {
+      ...name,
+      key: Schema.String,
+      text: Schema.optional(Schema.String),
+      base64: Schema.optional(Schema.String),
+      content_type: Schema.optional(
+        Schema.String.annotate({
+          description: "text/plain when text is given, else application/octet-stream",
+        }),
+      ),
+    },
+    Ok,
+  ),
   read(
     "list_secrets",
     "The names of the applet's secrets. Values are never returned.",
@@ -188,14 +204,17 @@ export const toolkit = Toolkit.make(
 /** Every tool over the services of the request that built it: the caller and the router's own. */
 const handlers = toolkit.toLayer(
   Effect.gen(function* () {
-    const context = yield* Effect.context<Caller | Registry | Supervisors | Bundler | Vars>();
+    const context = yield* Effect.context<
+      Caller | Registry | Supervisors | Bundler | Bucket | Vars
+    >();
+
     const caller = yield* Caller;
     const registry = yield* Registry;
     const supervisors = yield* Supervisors;
     const vars = yield* Vars;
 
     const provided = <A, E>(
-      effect: Effect.Effect<A, E, Caller | Registry | Supervisors | Bundler | Vars>,
+      effect: Effect.Effect<A, E, Caller | Registry | Supervisors | Bundler | Bucket | Vars>,
     ) => Effect.provide(effect, context);
 
     return {
@@ -284,6 +303,27 @@ const handlers = toolkit.toLayer(
               Schema.decodeUnknownEffect(KvList)(result).pipe(Effect.orDie),
             ),
           ),
+        ),
+      put_blob: ({ name, key, text, base64, content_type }) =>
+        provided(
+          Effect.gen(function* () {
+            if ((text === undefined) === (base64 === undefined))
+              return yield* new BadRequest({ message: "give exactly one of text and base64" });
+
+            const body =
+              text !== undefined
+                ? new TextEncoder().encode(text)
+                : Uint8Array.from(atob(base64 ?? ""), (char) => char.charCodeAt(0));
+
+            yield* putBlob(
+              name,
+              key,
+              body,
+              content_type ?? (text !== undefined ? "text/plain" : undefined),
+            );
+
+            return ok;
+          }),
         ),
       list_secrets: ({ name }) =>
         provided(
