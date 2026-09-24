@@ -28,15 +28,19 @@ All from this directory, all scripts in `package.json`, run with `vp run`.
 | `vp run dev` | the local platform and the editor page against it, see "Local development" |
 | `vp run dev:remote` | the editor page on localhost against the deployed platform, see "Local development" |
 | `vp run push <path>` | upload one applet directory to the deployed platform; `push:local` for the local one. A new applet is `private`, and `--visibility family` or `--visibility public` opens this one; without the flag a push leaves the setting alone |
-| `vp run push --examples` | push every example applet as public, except `chat`, which spends the OpenRouter key, and `GET` each public one, which must answer 2xx: the check after a platform change; `vp run push:local --examples` for the local platform |
 | `vp run remove <name>` | delete one applet from the deployed platform with its versions, storage and blobs; `remove:local` for the local one |
 | `vp run deploy` | build the editor, `wrangler deploy` the bundler, the editor and the router, upload the router's secrets, and point the mail catch-all rule at the router. The platform deploys when the platform changes, not when an applet does |
 | `vp run deploy <worker>...` | the same for only the workers named, any of `bundler`, `editor` and `router`, always in that order |
-| `vp run ship` | `deploy`, then `push --examples` |
+| `vp run ship` | `deploy`, then push `examples/preact-app` and `examples/mailbox` as public, each checked to answer 2xx |
+| `vp run templates` | embed the directories under `examples/` into `packages/api/src/templates.json` as the templates a new applet starts from, after changing one |
 | `vp run destroy` | list what the platform holds on the account; `vp run destroy --yes` deletes it: the three workers with every applet's storage, the registry and both buckets. The zone's DNS record, Email Routing and destination addresses stay |
 | `vp run tail` | follow the deployed router's console output |
 
 Secrets and the host suffix live in `secrets.env`, copied from `secrets.env.example`, never committed.
+
+## One surface
+
+Every capability is an admin API route first; the editor, the CLI and the MCP tools call those routes' handlers and never add logic of their own. A new MCP tool starts as a new route.
 
 ## Workflows
 
@@ -45,10 +49,10 @@ What to run for each kind of change, once "One-time setup" is done.
 | You changed | Run |
 | --- | --- |
 | the editor page, and want to see it while you work | `vp run dev:remote` for the page against the deployed platform, or `vp run dev` against the local one |
-| the router, the bundler or `@std`, and want to try it | `vp run dev`, then `vp run push:local --examples` to fill the local registry |
+| the router, the bundler or `@std`, and want to try it | `vp run dev`, then `vp run push:local examples/preact-app` to fill the local registry |
 | the editor page, and want it live | `vp run deploy editor` |
 | the router, the bundler or `@std` | `vp run deploy router bundler`. `@std` is bundled into the bundler, so it counts as a bundler change |
-| the page and the backend, or you are not sure | `vp run ship`, which deploys all three and pushes the examples as the check |
+| the page and the backend, or you are not sure | `vp run ship`, which deploys all three and pushes two examples as the check |
 | the registry schema, a Durable Object class, a resource name, or anything else the deployed state would fight | `vp run destroy --yes`, then `vp run ship`. It costs one new magic link |
 
 `vp run destroy` without `--yes` is always safe: it prints what exists and deletes nothing.
@@ -75,7 +79,7 @@ There are two ways to run the platform on your machine. Both open the same edito
 
 `<applet>.localhost` resolves to loopback in every browser, so the router routes by hostname with no DNS. Before it starts, the script writes `packages/router/.dev.vars` from `secrets.env`, always with the `.localhost` suffix whatever the file names.
 
-The local registry starts empty. `vp run push:local --examples` fills it, and `vp run push:local <path>` uploads one directory.
+The local registry starts empty. `vp run push:local <path>` uploads one directory, `examples/preact-app` to start.
 
 Received mail can be simulated locally: wrangler's `POST http://localhost:8787/cdn-cgi/handler/email?from=<sender>&to=<applet>@localhost` with an RFC 822 message as the body reaches the router's `email` handler and the applet named by the local part. Sent mail is accepted locally and goes nowhere.
 

@@ -121,7 +121,7 @@ Secrets, all on the router, deploy, from the host-only `secrets.env` through `wr
 - from the file: `BETTER_AUTH_SECRET`, `EMAIL_FROM`, `OWNER_EMAIL`, `OPENROUTER_API_KEY`
 - derived: `ADMIN_TOKEN_HASH` from `ADMIN_TOKEN`, `HOST_SUFFIX` and `AUTH_URL` from `APPLET_HOST_SUFFIX`
 
-After the platform, `vp run push --examples` pushes the example applets through the admin API as the check that the platform answers. `vp run destroy --yes` deletes every deploy row under Compute and Storage, the router first, and leaves the zone's rows alone.
+After the platform, `vp run ship` pushes two example applets through the admin API as the check that the platform answers. `vp run destroy --yes` deletes every deploy row under Compute and Storage, the router first, and leaves the zone's rows alone.
 
 ## The build
 
@@ -238,7 +238,7 @@ The same `HttpApi` is the OpenAPI document Effect generates from it, served on `
 
 ### The MCP server
 
-`packages/router/src/mcp.ts` is an Effect `Toolkit` of tools over the same services the admin API's handlers use, `deploy` and `patch` among them, served by Effect's `McpServer` on `MCP_URL`, which is `https://mcp<suffix>/`. The tools are `list_applets`, `deploy_applet`, `get_logs` and so on, The server's instructions are a short orientation that sends the agent to `read_docs`, which returns `applets.md` or `platform.md` as they are, imported as text by `packages/router/src/docs.ts`. So an agent reads what a person reads, and there is no second copy to go stale. Ingress turns the bearer token into the `Caller` and builds the server for that one request; a tool's refusal is the same tagged error the API answers with, shown to the agent as the result's text. Only the stateless protocol revision, `2026-07-28`, is offered: nothing outlives a request on Workers, so a session id would have nowhere to live, and the `subscriptions/listen` stream is refused with method-not-found, which a client takes as no notifications.
+`packages/router/src/mcp.ts` is an Effect `Toolkit` of tools over the same services the admin API's handlers use, `deploy` and `patch` among them, served by Effect's `McpServer` on `MCP_URL`, which is `https://mcp<suffix>/`. The tools are named object_verb, `applet_deploy`, `files_edit`, `blobs_put` and so on, so they group by what they act on. The server's instructions are a short orientation that sends the agent to `help`, which serves `applets.md` and `platform.md` from `packages/router/src/docs.ts`: whole, or one `##` section at a time as a topic named by its heading, each section's first line saying when to read it. So an agent reads what a person reads, and there is no second copy to go stale. `applet_fetch` calls the applet through ingress's applet host as the caller, so the run is recorded like any other; ingress provides that path to the server as `AppletFetch`, since the server cannot import ingress. `applet_create` takes a `template`, one of the directories under `examples/`, which `vp run templates` embeds into `packages/api` as JSON so the router and the editor offer the same list; a test in `packages/cli` fails when the JSON is behind the directories. Ingress turns the bearer token into the `Caller` and builds the server for that one request; a tool's refusal is the same tagged error the API answers with, shown to the agent as the result's text. Only the stateless protocol revision, `2026-07-28`, is offered: nothing outlives a request on Workers, so a session id would have nowhere to live, and the `subscriptions/listen` stream is refused with method-not-found, which a client takes as no notifications.
 
 ## OAuth for MCP clients
 
@@ -287,7 +287,7 @@ Applets never receive a platform secret; the OpenRouter key is used on their beh
 
 ## The editor
 
-`packages/editor` is the third platform script: a Vite React page on the design system, served on `app.<suffix>`. The router forwards that host to the editor script over a service binding and answers `/api/` on it with the admin API, so the page never holds a token and never crosses an origin. What it does: show the user's recently changed applets on Home, list and search applets, open one from `GET /applets/:name/source`, edit and add files, save unsaved work as a draft on the router, deploy, browse the version history with the files each one changed, view or roll back to an older version after a confirmation, create a new applet, which deploys a one-function template as its version 1, remove one, manage the user's API keys and, for the admin, manage who may sign in.
+`packages/editor` is the third platform script: a Vite React page on the design system, served on `app.<suffix>`. The router forwards that host to the editor script over a service binding and answers `/api/` on it with the admin API, so the page never holds a token and never crosses an origin. What it does: show the user's recently changed applets on Home, list and search applets, open one from `GET /applets/:name/source`, edit and add files, save unsaved work as a draft on the router, deploy, browse the version history with the files each one changed, view or roll back to an older version after a confirmation, create a new applet, which deploys a template as its version 1, remove one, manage the user's API keys and, for the admin, manage who may sign in.
 
 The URL picks the page, through [wouter](https://github.com/molefrog/wouter): `/`, `/applets`, `/logs` and `/settings` sit in a shell with a global rail, and `/applets/:name/:view` is an open applet, so every page has a link and the back button works. The editor script answers a path that is no file with `index.html`, except under `/assets/`, which is a 404: a deploy replaces every chunk, and a page open across one would otherwise get the page as JavaScript and go blank. The page listens for Vite's `preloadError` and reloads for the current build instead, and the router logs the miss. The store follows the URL and keeps the open applet loaded while the user visits other pages, so unsaved edits survive until another applet is opened or the tab closes, and both of those ask first.
 
@@ -315,7 +315,7 @@ Generated component files are excluded from lint and format, since they are not 
 
 ## To do
 
-`vp run push --examples` is the check after a platform change, and `vp run push:local --examples` is the same against the local platform. Still open:
+`vp run ship` pushes two examples as the check after a platform change, and `vp run push:local examples/<name>` is the same against the local platform. Still open:
 
 - the installer on a package that ships CommonJS, imports a `node:` builtin, or needs a peer dependency
 - streaming blobs over RPC

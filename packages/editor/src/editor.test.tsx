@@ -490,7 +490,11 @@ test("the admin must type another applet's name to remove it", async () => {
 
 test("New applet deploys the template and opens the editor on it", async () => {
   const table = routes();
-  table.set("PUT /api/applets/fresh/versions", () => ({ version: 1, exports: [], installed: [] }));
+  table.set("PUT /api/applets/fresh/versions?template=basic-html", () => ({
+    version: 1,
+    exports: [],
+    installed: [],
+  }));
   table.set("GET /api/applets/fresh", () => ({ applet: { ...row, name: "fresh" }, versions: [] }));
   table.set("GET /api/applets/fresh/draft", () => ({ files: null, updated_at: null }));
   table.set("GET /api/applets/fresh/source", () => ({ version: 2, files: source }));

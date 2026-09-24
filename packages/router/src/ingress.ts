@@ -11,12 +11,13 @@ import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
 import { AdminApi, docsPaths } from "./admin.ts";
 import { Auth, mcpScopes } from "./auth.ts";
-import { Editor, Supervisors, Vars } from "./bindings.ts";
+import { Bucket, Editor, Supervisors, Vars } from "./bindings.ts";
+import { verifyBlobDownload } from "./blobDownload.ts";
 import { Caller } from "./caller.ts";
 import { depthHeader } from "./egress.ts";
-import { serve as mcp } from "./mcp.ts";
+import { AppletFetch, serve as mcp } from "./mcp.ts";
 import { log } from "./platformLog.ts";
-import { can, isCrossOrigin, isCrossOriginSessionWrite } from "./policy.ts";
+import { can, isCrossOrigin, isCrossOriginSessionWrite, type Member } from "./policy.ts";
 import { Registry } from "./registry.ts";
 import { traceHeaders } from "./tracing.ts";
 import { isAppletName, requestHeader, targetHeaders, targetOf, userHeader } from "./types.ts";
@@ -146,9 +147,29 @@ const adminHost = Effect.fn("Ingress.admin")(function* (
  */
 const mcpHost = Effect.fn("Ingress.mcp")(function* (request: HttpServerRequest.HttpServerRequest) {
   const auth = yield* Auth;
-  const { AUTH_URL, MCP_URL } = yield* Vars;
+  const { AUTH_URL, BETTER_AUTH_SECRET, MCP_URL } = yield* Vars;
   const incoming = yield* web(request);
   const issuer = `${AUTH_URL}/api/auth`;
+
+  if (pathOf(request) === "/blob" && request.method === "GET") {
+    const claim = yield* Effect.promise(() =>
+      verifyBlobDownload(new URL(incoming.url), BETTER_AUTH_SECRET),
+    );
+
+    if (claim === null) return yield* new NotFound({ message: "download link expired or invalid" });
+
+    const bucket = yield* Bucket;
+    const object = yield* bucket.get(`${claim.id}/${claim.key}`);
+
+    if (object === null) return yield* new NotFound({ message: "no blob" });
+
+    const filename = encodeURIComponent(claim.key.split("/").at(-1) ?? claim.key);
+
+    return HttpServerResponse.raw(object.body, {
+      contentType: object.httpMetadata?.contentType ?? "application/octet-stream",
+      headers: { "content-disposition": `attachment; filename="${filename}"` },
+    });
+  }
 
   // The resource metadata is ours, not the provider's: a client asks for the scopes it advertises, and the provider leaves `offline_access` out, so its clients never get a refresh token.
   if (pathOf(request) === "/.well-known/oauth-protected-resource")
@@ -193,8 +214,17 @@ const mcpHost = Effect.fn("Ingress.mcp")(function* (request: HttpServerRequest.H
       },
     );
 
+  const context = yield* Effect.context<Registry | Auth | Entry | Supervisors>();
+
   return yield* mcp.pipe(
     Effect.provideService(Caller, subject),
+    Effect.provideService(AppletFetch, (name, request) =>
+      appletHost(HttpServerRequest.fromWeb(request), name, subject).pipe(
+        Effect.map((response) => HttpServerResponse.toWeb(response)),
+        Effect.catchTag("Unauthorized", (error) => new Forbidden({ message: error.message })),
+        Effect.provide(context),
+      ),
+    ),
     Effect.annotateLogs({ by: subject.email }),
   );
 });
@@ -240,10 +270,11 @@ async function relay(
   }
 }
 
-/** An applet's host: the policy check, then its Supervisor, with the request recorded either way. */
+/** An applet's host: the policy check, then its Supervisor, with the request recorded either way. `given` is the subject when the MCP server fetches as its caller. */
 const appletHost = Effect.fn("Ingress.applet")(function* (
   request: HttpServerRequest.HttpServerRequest,
   name: string,
+  given?: Member,
 ) {
   if (!isAppletName(name)) return yield* new NotFound({ message: `no host ${name}` });
 
@@ -258,7 +289,9 @@ const appletHost = Effect.fn("Ingress.applet")(function* (
 
   const incoming = yield* web(request);
   const auth = yield* Auth;
-  const subject = applet.visibility === "public" ? null : yield* auth.subject(incoming.headers);
+
+  const subject =
+    applet.visibility === "public" ? null : (given ?? (yield* auth.subject(incoming.headers)));
 
   if (!can(subject, "use", applet)) {
     return subject === null

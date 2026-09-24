@@ -41,6 +41,8 @@ export type NewVersion = {
   readonly files: Files;
   readonly exports: ReadonlyArray<string>;
   readonly installed: ReadonlyArray<string>;
+  /** Set on the applet when this version creates it; a later version leaves the setting alone. */
+  readonly description: string;
 };
 
 /** The settings a patch changes. `schedule` null stops the timer; leaving a field out keeps it. */
@@ -324,8 +326,8 @@ const make = Effect.gen(function* () {
       function* (name: string, owner: string, version: NewVersion) {
         const at = now();
 
-        yield* sql`INSERT INTO applets (id, name, owner, created_at, updated_at)
-           VALUES (${uuidv7()}, ${name}, ${owner}, ${at}, ${at}) ON CONFLICT (name) DO NOTHING`;
+        yield* sql`INSERT INTO applets (id, name, owner, description, created_at, updated_at)
+           VALUES (${uuidv7()}, ${name}, ${owner}, ${version.description}, ${at}, ${at}) ON CONFLICT (name) DO NOTHING`;
 
         const applet = yield* getApplet(name);
 

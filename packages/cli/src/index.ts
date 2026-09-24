@@ -4,21 +4,13 @@ import { NodeHttpClient, NodeRuntime, NodeServices } from "@effect/platform-node
 import { Effect, Layer, Option } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 
-import { CliError } from "./environment.ts";
 import { platformDeploy, platformDestroy, platformDev, targets } from "./platform.ts";
-import { push, pushExamples, remove, visibilities } from "./push.ts";
+import { push, remove, visibilities } from "./push.ts";
 
 const pushCommand = Command.make(
   "push",
   {
-    path: Argument.String("path").pipe(
-      Argument.withDescription("the applet directory"),
-      Argument.optional,
-    ),
-    examples: Flag.Boolean("examples").pipe(
-      Flag.withDescription("push every applet under examples/ as public, in place of a path"),
-      Flag.withDefault(false),
-    ),
+    path: Argument.String("path").pipe(Argument.withDescription("the applet directory")),
     visibility: Flag.Literals("visibility", visibilities).pipe(
       Flag.withDescription(
         "who may reach it: private is only you, family is everyone who can sign in, public is anyone. A new applet is private, and without the flag a push leaves the setting alone",
@@ -26,14 +18,7 @@ const pushCommand = Command.make(
       Flag.optional,
     ),
   },
-  ({ path, examples, visibility }) => {
-    if (examples) return pushExamples;
-
-    return Option.match(path, {
-      onNone: () => Effect.fail(new CliError({ message: "push needs a path, or --examples" })),
-      onSome: (directory) => push(directory, Option.getOrUndefined(visibility)),
-    });
-  },
+  ({ path, visibility }) => push(path, Option.getOrUndefined(visibility)),
 ).pipe(Command.withDescription("Upload an applet directory; the platform bundles and serves it"));
 
 const removeCommand = Command.make(

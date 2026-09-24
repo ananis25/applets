@@ -11,21 +11,22 @@ import {
 } from "@applets/ui/components/ui/dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@applets/ui/components/ui/empty";
 import { Input } from "@applets/ui/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@applets/ui/components/ui/select";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import type { AppletSummary, Files } from "@applets/api";
+import { templates, type AppletSummary, type Files } from "@applets/api";
 import { call } from "./client.ts";
 import { unzip } from "./editor/unzip.ts";
 import { appletsQuery, useMe } from "./queries.ts";
 import { askText } from "./ask.tsx";
 import { Failure } from "./failure.tsx";
 import { appletLink, relTime } from "./urls.ts";
-
-const template = `/** A JSON API. */
-export function fetch(request: Request): Response {
-  return Response.json({ path: new URL(request.url).pathname });
-}
-`;
 
 /** Visibility and one badge per trigger the applet declares. */
 export function Badges({ applet }: { applet: AppletSummary }) {
@@ -58,10 +59,11 @@ export function ErrorDot({ applet }: { applet: AppletSummary }) {
 /** The name a downloaded source zip suggests: `hello-v3.zip` was `hello`. */
 const nameFromZip = (filename: string) => filename.replace(/\.zip$/i, "").replace(/-v\d+$/, "");
 
-/** The New applet button and the dialog that names it, from the template or from a zip of source files. A new applet opens in the editor. */
+/** The New applet button and the dialog that names it, from a template or from a zip of source files. A new applet opens in the editor. */
 export function NewApplet() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const [template, setTemplate] = useState("basic-html");
   const [files, setFiles] = useState<{ name: string; files: Files }>();
   const [error, setError] = useState<string>();
   const picker = useRef<HTMLInputElement>(null);
@@ -74,8 +76,8 @@ export function NewApplet() {
       call((api) =>
         api.versions.deploy({
           params: { name: applet },
-          query: {},
-          payload: { files: files?.files ?? { "main.ts": template } },
+          query: files === undefined ? { template } : {},
+          payload: { files: files?.files },
         }),
       ),
     onSuccess: (_, applet) => {
@@ -135,6 +137,26 @@ export function NewApplet() {
             />
             <Button onClick={create}>Create</Button>
           </div>
+          <Select
+            items={Object.keys(templates).map((value) => ({ value, label: value }))}
+            value={template}
+            onValueChange={(value) => {
+              setTemplate(value ?? "basic-html");
+              setFiles(undefined);
+            }}
+          >
+            <SelectTrigger size="sm" aria-label="template">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(templates).map(([value, { description }]) => (
+                <SelectItem key={value} value={value}>
+                  <span className="font-mono">{value}</span>
+                  <span className="text-xs text-muted-foreground">{description}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <div className="flex items-center gap-2 text-xs">
             <input
               ref={picker}
@@ -149,7 +171,7 @@ export function NewApplet() {
             <span className="font-mono">
               {files
                 ? `${files.name}: ${Object.keys(files.files).length} files`
-                : "or start from the template"}
+                : `or start from the ${template} template`}
             </span>
           </div>
         </DialogContent>

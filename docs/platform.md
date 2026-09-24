@@ -2,9 +2,25 @@
 
 ## Agents and scripts
 
+Use when connecting an agent or a script to the platform.
+
 The admin API is an OpenAPI document at `https://admin<suffix>/openapi.json`, with a reference page at `https://admin<suffix>/docs`. A script calls it with an API key from the editor's Settings page as the bearer token, and `vp run push` is one such script.
 
-The MCP server at `https://mcp<suffix>/` exposes the same verbs as tools: `list_applets`, `get_applet`, `read_files`, `deploy_applet`, `update_applet`, `fork_applet`, `remove_applet`, `run_applet`, `get_logs`, `get_requests`, `query_sqlite`, `list_kv`, `put_blob`, `list_secrets`, `set_secret`, `remove_secret`, `whoami` and `read_docs`. Its instructions are a few lines that send the agent to `read_docs`, which returns these docs. It needs no key: the router is an OAuth authorization server, so a client registers itself, opens the sign-in page in a browser, and asks for consent once. In Claude Code:
+The MCP server at `https://mcp<suffix>/` exposes applet creation, code, settings, storage, and activity operations as tools named by what they act on. Platform administration and editor drafts stay on the API:
+
+| Object | Tools |
+| --- | --- |
+| `help` | `help(topic?)`: without a topic, who the agent acts as, the host suffix and the list of topics; with one, that section of these docs |
+| `applet` | `applet_list`, `applet_get`, `applet_create` (from a template), `applet_deploy` (the complete set of files), `applet_configure` (settings, schedule, rollback, rename), `applet_fork`, `applet_run`, `applet_fetch` (an HTTP request as the caller), `applet_remove` |
+| `templates` | `templates_list` |
+| `files` | `files_read`, `files_edit` (text replacements, deployed as a new version) |
+| `sql` | `sql_read`, `sql_write` (several statements in one transaction) |
+| `kv` | `kv_list`, `kv_get`, `kv_put`, `kv_remove` |
+| `blobs` | `blobs_list`, `blobs_get`, `blobs_put`, `blobs_remove` |
+| `secrets` | `secrets_list`, `secrets_set`, `secrets_remove` |
+| `logs`, `requests`, `emails` | `logs_list`, `requests_list`, `emails_list` (mail metadata; bodies are not stored) |
+
+The server's instructions are a few lines that send the agent to `help`, which serves these docs a section at a time. It needs no key: the router is an OAuth authorization server, so a client registers itself, opens the sign-in page in a browser, and asks for consent once. In Claude Code:
 
 ```
 claude mcp add --transport http applets https://mcp<suffix>/
@@ -13,6 +29,8 @@ claude mcp add --transport http applets https://mcp<suffix>/
 An agent acts as the person who signed in, with their applets and nobody else's. A person signs in once: the agent's token renews itself, and asks for a sign-in again only after a year without use. The editor's Settings page has an Agents section with the same instructions.
 
 ## Access
+
+Use when deciding who can reach an applet, or how a caller is identified.
 
 One deployment is one group of people: an admin, and the family and friends the admin lets in. A person has a role, an applet has an owner and a visibility, and one pure function, `can(subject, action, applet)` in `packages/router/src/policy.ts`, turns the pair into yes or no. Nothing else in the router decides access. Nobody keeps a list of people on one applet, so there is no "share with this email".
 
@@ -60,12 +78,16 @@ A user makes a key on the editor's Settings page and sees it once. The registry 
 
 ## Secrets
 
+Use when an applet needs a key or a token.
+
 An applet's own secrets are its owner's: a provider key, a webhook token. The owner sets them on the Secrets page, and the code reads one with `secret("NAME")` from `@std`, which throws when it is not set. They are rows in the registry's `secrets` table, in plain text: the Cloudflare account holder can read D1 either way, and a key held in a router secret would not change that. The API takes a value and never returns one. The supervisor reads them inside the loader callback and places them in the loaded `env` as `SECRETS`. `env` is fixed at load, so every change bumps `applets.secrets_rev`, which is part of the target, the loader key and the facet key: the next request loads the worker again with the new set and the facet restarts, keeping its storage.
 
 ## The editor
 
+Use when finding something in the editor's pages.
+
 An open applet is one screen with a left rail of pages: Code, Logs, Requests, Emails, SQLite, KV, Blobs, Secrets, Versions and Settings. The top bar is a breadcrumb, the state pill, and Save and Deploy. Code is the file tree, tabs and the editor pane, with the live applet in an optional preview beside it and the bundler's errors and warnings from the last deploy under it. Logs and Requests follow the two registry tables, filtered to the current version by default with a switch to all versions. Logs follows both, to put each run's lines under its request row. Requests has a small bar chart above the list, the last 24 hours or 7 days across every version, failures in red. Emails lists the applet's mail in and out. SQLite lists the applet's tables with row counts, runs any statement against the live database, and downloads a dump as SQL, which the page builds from queries; the runtime's own `_cf_` tables, `kv` among them, and SQLite's own `sqlite_` objects are left out. KV lists keys by prefix with values as JSON, Blobs lists the bucket under the applet's prefix and uploads a file under it, and both delete. Secrets sets and deletes the applet's secrets and shows names only. Versions is the list with the files each one changed, and view and rollback per row. Settings shows the registry row, renames the applet, sets the description, visibility, egress, schedule and email switch, fires the schedule now, forks the live version into a new applet, lists the live version's dependencies with 're-resolve', downloads the live source as a zip the page builds itself, and discards the draft. Its danger zone removes the applet once its name is typed.
 
-Home shows the user's six most recently changed applets as cards: name, description, visibility and trigger badges, when it last changed, and a red dot when the last 24 hours had failed runs. The Applets page lists them all with search; the admin's also lists everyone else's applets with their owner, which do not open and can be removed. New applet is a button on both: it names the applet and deploys the template as v1, or the files of a zip picked from disk, which is how a downloaded source comes back; the page reads the zip itself. The platform Logs page lists runs across the user's own applets, newest first, with filters for applet, status and trigger kept in the query string; a row opens to the lines that run wrote. For the admin it has a second view, platform, which is `platform_logs` newest first with a level filter, each line linking to its applet. The platform Settings page has one section per URL under `/settings/`. For every user: profile, browser sessions with revoke, and API keys. For the admin: users, the schedules of every applet, unclaimed mail, and read-only platform info, which is the host suffix, the admin, the mail sender, the default model and how long logs and emails are kept. The editor's own events, saved, deployed, rolled back, go to the status line and never into the log stream.
+Home shows the user's six most recently changed applets as cards: name, description, visibility and trigger badges, when it last changed, and a red dot when the last 24 hours had failed runs. The Applets page lists them all with search; the admin's also lists everyone else's applets with their owner, which do not open and can be removed. New applet is a button on both: it names the applet and deploys the chosen template as v1, or the files of a zip picked from disk, which is how a downloaded source comes back; the page reads the zip itself. The platform Logs page lists runs across the user's own applets, newest first, with filters for applet, status and trigger kept in the query string; a row opens to the lines that run wrote. For the admin it has a second view, platform, which is `platform_logs` newest first with a level filter, each line linking to its applet. The platform Settings page has one section per URL under `/settings/`. For every user: profile, browser sessions with revoke, and API keys. For the admin: users, the schedules of every applet, unclaimed mail, and read-only platform info, which is the host suffix, the admin, the mail sender, the default model and how long logs and emails are kept. The editor's own events, saved, deployed, rolled back, go to the status line and never into the log stream.
 
 A draft is stored source and nothing else. The editor has no preview environment: Deploy makes a real version current, so the live applet swaps to it and keeps its storage. A save is live at once and the database is one per applet, shared by every version of it.

@@ -5,7 +5,7 @@
  * applet's prefix.
  */
 import { api, AppletFailed, BadRequest, KvList, NotFound, SqlResult } from "@applets/api";
-import type { Inspection } from "@applets/api/capabilities";
+import type { Inspection, InspectionResult } from "@applets/api/capabilities";
 import { Effect, Schema } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
@@ -56,48 +56,95 @@ export const inspect = Effect.fn("Storage.inspect")(function* (name: string, cal
   return result;
 });
 
+/** A blob of the applet's, or null when the key does not exist. */
+export const getBlob = Effect.fn("Storage.getBlob")(function* (name: string, key: string) {
+  const applet = yield* owned(name);
+  const bucket = yield* Bucket;
+
+  return yield* bucket.get(`${applet.id}/${key}`);
+});
+
+/** One page of the applet's blobs under a prefix, keys without the applet's own prefix. */
+export const listBlobs = Effect.fn("Storage.listBlobs")(function* (
+  name: string,
+  prefix: string,
+  cursor: string | undefined,
+) {
+  const applet = yield* owned(name);
+  const bucket = yield* Bucket;
+  const namespace = `${applet.id}/`;
+
+  const page = yield* bucket.list({
+    prefix: `${namespace}${prefix}`,
+    cursor,
+    limit: blobPageSize,
+    include: ["httpMetadata"],
+  });
+
+  return {
+    blobs: page.objects.map((object) => ({
+      key: object.key.slice(namespace.length),
+      size: object.size,
+      content_type: object.httpMetadata?.contentType ?? null,
+      uploaded_at: object.uploaded.toISOString(),
+    })),
+    cursor: page.truncated ? page.cursor : null,
+  };
+});
+
+export const removeBlob = Effect.fn("Storage.removeBlob")(function* (name: string, key: string) {
+  const applet = yield* owned(name);
+  const bucket = yield* Bucket;
+  yield* bucket.delete(`${applet.id}/${key}`);
+});
+
+const decoded = <S extends Schema.Top>(schema: S) =>
+  Effect.flatMap((result: InspectionResult) =>
+    Schema.decodeUnknownEffect(schema)(result).pipe(Effect.orDie),
+  );
+
+/** One statement; a `readonly` one that wrote is rolled back and refused. */
+export const runSql = (name: string, sql: string, readonly: boolean) =>
+  inspect(name, { kind: "sql", sql, readonly }).pipe(decoded(SqlResult));
+
+/** Every statement in one transaction; the first failure rolls back all of them. */
+export const runSqlBatch = (name: string, statements: ReadonlyArray<string>) =>
+  inspect(name, { kind: "sql-batch", statements }).pipe(
+    decoded(Schema.Struct({ results: Schema.Array(SqlResult) })),
+  );
+
+export const listKv = (name: string, prefix: string) =>
+  inspect(name, { kind: "kv", prefix, limit: 500 }).pipe(decoded(KvList));
+
+export const getKv = (name: string, key: string) =>
+  inspect(name, { kind: "kv-get", key }).pipe(
+    decoded(KvList),
+    Effect.flatMap(({ entries }) =>
+      entries[0] === undefined
+        ? Effect.fail(new NotFound({ message: `no key ${key}` }))
+        : Effect.succeed(entries[0]),
+    ),
+  );
+
+/** `value` is JSON text, stored as what it parses to. */
+export const putKv = (name: string, key: string, value: string) =>
+  inspect(name, { kind: "kv-put", key, value }).pipe(Effect.as(ok));
+
+export const removeKv = (name: string, key: string) =>
+  inspect(name, { kind: "kv-delete", key }).pipe(Effect.as(ok));
+
 export const storage = HttpApiBuilder.group(api, "storage", (handlers) =>
   handlers.handleAll({
-    sql: ({ params, payload }) =>
-      inspect(params.name, { kind: "sql", sql: payload.sql }).pipe(
-        Effect.flatMap((result) =>
-          Schema.decodeUnknownEffect(SqlResult)(result).pipe(Effect.orDie),
-        ),
-      ),
-    kv: ({ params, query }) =>
-      inspect(params.name, { kind: "kv", prefix: query.prefix ?? "", limit: 500 }).pipe(
-        Effect.flatMap((result) => Schema.decodeUnknownEffect(KvList)(result).pipe(Effect.orDie)),
-      ),
-    removeKv: ({ params, query }) =>
-      inspect(params.name, { kind: "kv-delete", key: query.key }).pipe(Effect.as(ok)),
-    blobs: ({ params, query }) =>
-      Effect.gen(function* () {
-        const applet = yield* owned(params.name);
-        const bucket = yield* Bucket;
-        const namespace = `${applet.id}/`;
-
-        const page = yield* bucket.list({
-          prefix: `${namespace}${query.prefix ?? ""}`,
-          cursor: query.cursor,
-          limit: blobPageSize,
-          include: ["httpMetadata"],
-        });
-
-        return {
-          blobs: page.objects.map((object) => ({
-            key: object.key.slice(namespace.length),
-            size: object.size,
-            content_type: object.httpMetadata?.contentType ?? null,
-            uploaded_at: object.uploaded.toISOString(),
-          })),
-          cursor: page.truncated ? page.cursor : null,
-        };
-      }),
+    sql: ({ params, payload }) => runSql(params.name, payload.sql, payload.readonly ?? false),
+    sqlBatch: ({ params, payload }) => runSqlBatch(params.name, payload.statements),
+    kv: ({ params, query }) => listKv(params.name, query.prefix ?? ""),
+    getKv: ({ params, query }) => getKv(params.name, query.key),
+    putKv: ({ params, query, payload }) => putKv(params.name, query.key, payload.value),
+    removeKv: ({ params, query }) => removeKv(params.name, query.key),
+    blobs: ({ params, query }) => listBlobs(params.name, query.prefix ?? "", query.cursor),
     blob: ({ params, query }) =>
       Effect.gen(function* () {
-        const applet = yield* owned(params.name);
-        const bucket = yield* Bucket;
-        const object = yield* bucket.get(`${applet.id}/${query.key}`);
+        const object = yield* getBlob(params.name, query.key);
 
         if (object === null) return yield* new NotFound({ message: `no blob ${query.key}` });
 
@@ -110,13 +157,6 @@ export const storage = HttpApiBuilder.group(api, "storage", (handlers) =>
       }),
     putBlob: ({ params, query, payload }) =>
       putBlob(params.name, query.key, payload, query.content_type).pipe(Effect.as(ok)),
-    removeBlob: ({ params, query }) =>
-      Effect.gen(function* () {
-        const applet = yield* owned(params.name);
-        const bucket = yield* Bucket;
-        yield* bucket.delete(`${applet.id}/${query.key}`);
-
-        return ok;
-      }),
+    removeBlob: ({ params, query }) => removeBlob(params.name, query.key).pipe(Effect.as(ok)),
   }),
 );

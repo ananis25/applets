@@ -14,6 +14,7 @@ import type {
   ChatParams,
   Inspection,
   InspectionResult,
+  Statement as InspectedStatement,
   Json,
   LogLevel,
   OutboundEmail,
@@ -27,6 +28,7 @@ export type {
   InboundEmail,
   Inspection,
   InspectionResult,
+  Statement as InspectedStatement,
   Json,
   OutboundEmail,
   ScheduledEvent,
@@ -192,25 +194,18 @@ const toCell = (value: SqlStorageValue): Cell =>
  * statement SQLite refuses is an answer, not a throw, so the router can tell it from a platform failure.
  */
 export function inspect(call: Inspection): InspectionResult {
-  if (call.kind === "kv") {
-    const entries = storage().kv.list({ prefix: call.prefix, limit: call.limit });
-
-    return {
-      entries: [...entries].map(([key, value]) => ({
-        key,
-        value: JSON.stringify(value) ?? String(value),
-      })),
-    };
-  }
-
-  if (call.kind === "kv-delete") {
-    storage().kv.delete(call.key);
-
-    return { entries: [] };
-  }
-
   try {
-    const cursor = storage().sql.exec(call.sql);
+    return answer(call);
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : String(cause) };
+  }
+}
+
+const answer = (call: Inspection): InspectionResult => {
+  const { kv: store, sql: db } = storage();
+
+  const statement = (sql: string): InspectedStatement => {
+    const cursor = db.exec(sql);
     const rows = [...cursor.raw()];
 
     return {
@@ -218,10 +213,62 @@ export function inspect(call: Inspection): InspectionResult {
       rows: rows.map((row) => row.map(toCell)),
       rowsWritten: cursor.rowsWritten,
     };
-  } catch (cause) {
-    return { error: cause instanceof Error ? cause.message : String(cause) };
+  };
+
+  switch (call.kind) {
+    case "kv":
+      return {
+        entries: [...store.list({ prefix: call.prefix, limit: call.limit })].map(
+          ([key, value]) => ({
+            key,
+            value: JSON.stringify(value) ?? String(value),
+          }),
+        ),
+      };
+    case "kv-get": {
+      const value = store.get(call.key);
+
+      return {
+        entries: value === undefined ? [] : [{ key: call.key, value: JSON.stringify(value) }],
+      };
+    }
+
+    case "kv-put":
+      store.put(call.key, JSON.parse(call.value));
+
+      return { entries: [] };
+    case "kv-delete":
+      store.delete(call.key);
+
+      return { entries: [] };
+    case "sql-batch":
+      return { results: storage().transactionSync(() => call.statements.map(statement)) };
+    case "sql": {
+      if (!call.readonly) return statement(call.sql);
+
+      if (!/^\s*SELECT\b/i.test(call.sql))
+        throw new Error("sql_read accepts SELECT only; use sql_write for changes");
+
+      const rollback = Symbol();
+      let result: InspectedStatement | undefined;
+
+      try {
+        storage().transactionSync(() => {
+          result = statement(call.sql);
+
+          if (result.rowsWritten > 0)
+            throw new Error("sql_read refuses a statement that writes; use sql_write");
+
+          throw rollback;
+        });
+      } catch (cause) {
+        if (cause !== rollback) throw cause;
+      }
+
+      return result!;
+    }
   }
-}
+};
 
 /**
  * Key-value storage in the same SQLite file as `sql`, for settings, cursors

@@ -8,9 +8,13 @@ import {
   api,
   BadRequest,
   BuildFailed,
+  describe,
   Forbidden,
+  listTemplates,
   NotFound,
+  templates,
   type AppletPatch,
+  type Edit,
   type Files,
 } from "@applets/api";
 import { Context, Effect, FileSystem, Layer, Option, Path } from "effect";
@@ -24,7 +28,7 @@ import { isCron } from "./cron.ts";
 import { mintKey } from "./keys.ts";
 import { can } from "./policy.ts";
 import { log } from "./platformLog.ts";
-import { fileSizeErrors, Registry } from "./registry.ts";
+import { fileSizeErrors, Registry, type WindowQuery } from "./registry.ts";
 import { storage } from "./storage.ts";
 import { defaultModel, isAppletName, isSecretName, retention, targetOf } from "./types.ts";
 
@@ -64,6 +68,7 @@ const applets = HttpApiBuilder.group(api, "applets", (handlers) =>
       }),
     patch: ({ params, payload }) => patch(params.name, payload),
     remove: ({ params }) => remove(params.name),
+    templates: () => Effect.succeed({ templates: listTemplates() }),
     fork: ({ params, payload }) => fork(params.name, payload.name),
     run: ({ params }) =>
       Effect.gen(function* () {
@@ -121,15 +126,17 @@ const applets = HttpApiBuilder.group(api, "applets", (handlers) =>
 
         return { hours: yield* registry.countRequests(applet.id) };
       }),
-    emails: ({ params, query }) =>
-      Effect.gen(function* () {
-        const applet = yield* owned(params.name);
-        const registry = yield* Registry;
-
-        return { emails: yield* registry.listEmails(applet.id, query) };
-      }),
+    emails: ({ params, query }) => emails(params.name, query),
   }),
 );
+
+/** An applet's mail in and out, using the same window for the API and MCP. */
+export const emails = Effect.fn("Admin.emails")(function* (name: string, query: WindowQuery) {
+  const applet = yield* owned(name);
+  const registry = yield* Registry;
+
+  return { emails: yield* registry.listEmails(applet.id, query) };
+});
 
 /** Removes the applet: its supervisor with the facet's storage and blobs, then its rows. */
 export const remove = Effect.fn("Admin.remove")(function* (name: string) {
@@ -235,7 +242,7 @@ export const patch = Effect.fn("Admin.patch")(function* (name: string, body: App
   return { applet: updated.value };
 });
 
-/** Bundles the uploaded files, records the version and makes it current. The first version makes the caller the applet's owner. */
+/** Bundles the uploaded files, records the version and makes it current. The first version makes the caller the applet's owner and its `main.ts` docstring the description. */
 export const deploy = Effect.fn("Admin.deploy")(function* (
   name: string,
   files: Files,
@@ -274,6 +281,7 @@ export const deploy = Effect.fn("Admin.deploy")(function* (
       files,
       exports: build.exports,
       installed: build.installed,
+      description: describe(files["main.ts"] ?? "").slice(0, maxDescription),
     })
     .pipe(
       Effect.catchTag(
@@ -303,25 +311,95 @@ export const deploy = Effect.fn("Admin.deploy")(function* (
   };
 });
 
+/** A new applet from a template, with `files` laid over the template's. A name that exists is refused: deploy changes an applet. */
+export const create = Effect.fn("Admin.create")(function* (
+  name: string,
+  template: string,
+  files: Files | undefined,
+) {
+  const chosen = templates[template];
+
+  if (chosen === undefined)
+    return yield* new BadRequest({
+      message: `no template ${template}; one of ${Object.keys(templates).join(", ")}`,
+    });
+
+  const registry = yield* Registry;
+
+  if (Option.isSome(yield* registry.getApplet(name)))
+    return yield* new BadRequest({ message: `${name} exists; deploy files or edits to change it` });
+
+  return yield* deploy(name, { ...chosen.files, ...files }, false);
+});
+
+/** The files of the current version, or of `version`, of an applet the caller may edit. */
+export const source = Effect.fn("Admin.source")(function* (name: string, version?: number) {
+  const applet = yield* owned(name);
+  const registry = yield* Registry;
+  const id = version ?? applet.current_version;
+
+  const found = id === null ? Option.none() : yield* registry.getVersion(applet.id, id);
+
+  if (Option.isNone(found)) return yield* new NotFound({ message: `no version ${id}` });
+
+  return { version: found.value.id, files: yield* registry.getFiles(applet.id, found.value.id) };
+});
+
+/** The files after the edits, or the first edit that does not fit them. */
+export const applyEdits = (
+  files: Files,
+  edits: ReadonlyArray<Edit>,
+): Effect.Effect<Files, BadRequest> =>
+  Effect.gen(function* () {
+    const next = { ...files };
+
+    for (const { path, old, new: text } of edits) {
+      const current = next[path];
+
+      if (old === "") {
+        if (current !== undefined)
+          return yield* new BadRequest({ message: `${path} exists; give the text to replace` });
+
+        next[path] = text;
+        continue;
+      }
+
+      if (current === undefined) return yield* new BadRequest({ message: `no file ${path}` });
+
+      const at = current.indexOf(old);
+
+      if (at === -1)
+        return yield* new BadRequest({ message: `${path} does not contain the old text` });
+
+      if (current.indexOf(old, at + 1) !== -1)
+        return yield* new BadRequest({
+          message: `the old text occurs more than once in ${path}; give more of it`,
+        });
+
+      next[path] = current.slice(0, at) + text + current.slice(at + old.length);
+    }
+
+    return next;
+  });
+
+/** The current files with the edits applied, deployed as a new version. */
+export const edit = Effect.fn("Admin.edit")(function* (name: string, edits: ReadonlyArray<Edit>) {
+  const { files } = yield* source(name);
+
+  return yield* deploy(name, yield* applyEdits(files, edits), false);
+});
+
 const versions = HttpApiBuilder.group(api, "versions", (handlers) =>
   handlers.handleAll({
-    deploy: ({ params, query, payload }) =>
-      deploy(params.name, payload.files, query.fresh ?? false),
-    source: ({ params, query }) =>
-      Effect.gen(function* () {
-        const applet = yield* owned(params.name);
-        const registry = yield* Registry;
-        const id = query.version ?? applet.current_version;
+    deploy: ({ params, query, payload }) => {
+      if (query.template !== undefined) return create(params.name, query.template, payload.files);
 
-        const version = id === null ? Option.none() : yield* registry.getVersion(applet.id, id);
-
-        if (Option.isNone(version)) return yield* new NotFound({ message: `no version ${id}` });
-
-        return {
-          version: version.value.id,
-          files: yield* registry.getFiles(applet.id, version.value.id),
-        };
-      }),
+      return payload.files === undefined
+        ? Effect.fail(new BadRequest({ message: "a deploy needs files or a template" }))
+        : deploy(params.name, payload.files, query.fresh ?? false);
+    },
+    edit: ({ params, payload }) => edit(params.name, payload.edits),
+    source: ({ params, query }) => source(params.name, query.version),
   }),
 );
 

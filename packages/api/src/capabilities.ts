@@ -118,17 +118,26 @@ export type AppletEnv = {
 /** A SQLite value as JSON can carry it: a BLOB travels as hex. */
 export type Cell = string | number | null | { readonly blob: string };
 
-/** What the editor's storage pages ask of an applet's own storage, answered inside its facet. */
+/**
+ * What the editor's storage pages and the MCP tools ask of an applet's own storage, answered inside
+ * its facet. A `readonly` statement is rolled back if it wrote; `kv-put` takes the value as JSON text.
+ */
 export type Inspection =
-  | { readonly kind: "sql"; readonly sql: string }
+  | { readonly kind: "sql"; readonly sql: string; readonly readonly?: boolean }
+  | { readonly kind: "sql-batch"; readonly statements: ReadonlyArray<string> }
   | { readonly kind: "kv"; readonly prefix: string; readonly limit: number }
+  | { readonly kind: "kv-get"; readonly key: string }
+  | { readonly kind: "kv-put"; readonly key: string; readonly value: string }
   | { readonly kind: "kv-delete"; readonly key: string };
 
+export type Statement = {
+  readonly columns: ReadonlyArray<string>;
+  readonly rows: ReadonlyArray<ReadonlyArray<Cell>>;
+  readonly rowsWritten: number;
+};
+
 export type InspectionResult =
-  | {
-      readonly columns: ReadonlyArray<string>;
-      readonly rows: ReadonlyArray<ReadonlyArray<Cell>>;
-      readonly rowsWritten: number;
-    }
+  | Statement
+  | { readonly results: ReadonlyArray<Statement> }
   | { readonly entries: ReadonlyArray<{ readonly key: string; readonly value: string }> }
   | { readonly error: string };

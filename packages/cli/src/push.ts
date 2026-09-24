@@ -7,7 +7,7 @@ import { Console, Effect } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 import { HttpApiClient } from "effect/unstable/httpapi";
 
-import { adminToken, appletUrl, attempt, box, CliError, paths } from "./environment.ts";
+import { adminToken, appletUrl, attempt, box, CliError } from "./environment.ts";
 
 export { visibilities, type Visibility };
 
@@ -112,24 +112,6 @@ export const push = (appletPath: string, visibility?: Visibility) =>
       `deployed ${name} v${deployed.version} at ${appletUrl(name)}${visibility === undefined ? "" : ` (${visibility})`}`,
     );
   });
-
-/** Examples that spend the OpenRouter key, so they are pushed private and not checked to answer. */
-const privateExamples = ["chat"];
-
-/** `vp run push --examples`: every applet under `examples/`, public, so each one is checked to answer: the check after a platform change. */
-export const pushExamples = Effect.gen(function* () {
-  const entries = yield* attempt(`Could not read ${paths.examples}`, () =>
-    readdir(paths.examples, { withFileTypes: true }),
-  );
-
-  for (const entry of entries) {
-    if (entry.isDirectory())
-      yield* push(
-        path.join(paths.examples, entry.name),
-        privateExamples.includes(entry.name) ? "private" : "public",
-      );
-  }
-});
 
 /** `vp run remove <name>`: delete the applet from the registry with its versions, storage and blobs. */
 export const remove = (name: string) =>

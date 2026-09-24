@@ -61,6 +61,19 @@ export const Files = Schema.Record(Schema.String, Schema.String);
 
 export type Files = typeof Files.Type;
 
+export { describe, listTemplates, templates, type Template } from "./templates.ts";
+
+/** One text replacement in a file: `old` occurs exactly once, or is empty to create the file. */
+export const Edit = Schema.Struct({ path: Schema.String, old: Schema.String, new: Schema.String });
+
+export type Edit = typeof Edit.Type;
+
+export const TemplateEntry = Schema.Struct({
+  name: Schema.String,
+  description: Schema.String,
+  files: Schema.Array(Schema.String),
+});
+
 export const FileChange = Schema.Struct({
   path: Schema.String,
   change: Schema.Literals(["added", "changed", "deleted"]),
@@ -324,6 +337,9 @@ const applets = HttpApiGroup.make("applets").add(
     error: [NotFound, Forbidden, BadRequest],
   }),
   HttpApiEndpoint.delete("remove", "/applets/:name", { params: name, success: Ok, error: owned }),
+  HttpApiEndpoint.get("templates", "/templates", {
+    success: Schema.Struct({ templates: Schema.Array(TemplateEntry) }),
+  }),
   HttpApiEndpoint.post("fork", "/applets/:name/fork", {
     params: name,
     payload: Schema.Struct({ name: Schema.String }),
@@ -382,10 +398,16 @@ const applets = HttpApiGroup.make("applets").add(
 const versions = HttpApiGroup.make("versions").add(
   HttpApiEndpoint.put("deploy", "/applets/:name/versions", {
     params: name,
-    query: { fresh: Schema.optional(Schema.Boolean) },
-    payload: Schema.Struct({ files: Files }),
+    query: { fresh: Schema.optional(Schema.Boolean), template: Schema.optional(Schema.String) },
+    payload: Schema.Struct({ files: Schema.optional(Files) }),
     success: Deployed,
-    error: [Forbidden, BuildFailed],
+    error: [Forbidden, BadRequest, BuildFailed],
+  }),
+  HttpApiEndpoint.post("edit", "/applets/:name/edits", {
+    params: name,
+    payload: Schema.Struct({ edits: Schema.Array(Edit) }),
+    success: Deployed,
+    error: [...owned, BadRequest, BuildFailed],
   }),
   HttpApiEndpoint.get("source", "/applets/:name/source", {
     params: name,
@@ -399,14 +421,33 @@ const versions = HttpApiGroup.make("versions").add(
 const storage = HttpApiGroup.make("storage").add(
   HttpApiEndpoint.post("sql", "/applets/:name/sql", {
     params: name,
-    payload: Schema.Struct({ sql: Schema.String }),
+    payload: Schema.Struct({ sql: Schema.String, readonly: Schema.optional(Schema.Boolean) }),
     success: SqlResult,
+    error: [NotFound, Forbidden, BadRequest, AppletFailed],
+  }),
+  HttpApiEndpoint.post("sqlBatch", "/applets/:name/sql/batch", {
+    params: name,
+    payload: Schema.Struct({ statements: Schema.Array(Schema.String) }),
+    success: Schema.Struct({ results: Schema.Array(SqlResult) }),
     error: [NotFound, Forbidden, BadRequest, AppletFailed],
   }),
   HttpApiEndpoint.get("kv", "/applets/:name/kv", {
     params: name,
     query: { prefix: Schema.optional(Schema.String) },
     success: KvList,
+    error: [NotFound, Forbidden, BadRequest, AppletFailed],
+  }),
+  HttpApiEndpoint.get("getKv", "/applets/:name/kv/entry", {
+    params: name,
+    query: { key: Schema.String },
+    success: KvEntry,
+    error: [NotFound, Forbidden, BadRequest, AppletFailed],
+  }),
+  HttpApiEndpoint.put("putKv", "/applets/:name/kv/entry", {
+    params: name,
+    query: { key: Schema.String },
+    payload: Schema.Struct({ value: Schema.String }),
+    success: Ok,
     error: [NotFound, Forbidden, BadRequest, AppletFailed],
   }),
   HttpApiEndpoint.delete("removeKv", "/applets/:name/kv", {

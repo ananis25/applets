@@ -28,7 +28,6 @@ export const paths = {
   routerPackage: path.join(repoRoot, "packages", "router"),
   bundlerPackage: path.join(repoRoot, "packages", "bundler"),
   editorPackage: path.join(repoRoot, "packages", "editor"),
-  examples: path.join(repoRoot, "examples"),
   secretsFile: path.join(repoRoot, "secrets.env"),
 };
 
