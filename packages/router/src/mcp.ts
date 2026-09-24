@@ -86,13 +86,17 @@ const Window = {
   limit: Schema.optional(Schema.Number),
 };
 
+// An empty struct's JSON schema has no `type`, which the MCP server refuses at registration, so a tool with no fields takes Effect's own empty parameters.
+const params = <P extends Schema.Struct.Fields>(fields: P) =>
+  Object.keys(fields).length === 0 ? Tool.EmptyParams : Schema.Struct(fields);
+
 const read = <const Name extends string, P extends Schema.Struct.Fields, S extends Schema.Top>(
   tool: Name,
   description: string,
   parameters: P,
   success: S,
 ) =>
-  Tool.make(tool, { description, parameters: Schema.Struct(parameters), success, failure: Refused })
+  Tool.make(tool, { description, parameters: params(parameters), success, failure: Refused })
     .annotate(Tool.Readonly, true)
     .annotate(Tool.Destructive, false);
 
@@ -105,7 +109,7 @@ const write = <const Name extends string, P extends Schema.Struct.Fields, S exte
 ) =>
   Tool.make(tool, {
     description,
-    parameters: Schema.Struct(parameters),
+    parameters: params(parameters),
     success,
     failure: Refused,
   }).annotate(Tool.Destructive, destructive);
