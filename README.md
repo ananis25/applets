@@ -27,15 +27,21 @@ A limitation is that you're limited to the JS/TS stack but that's pretty suffici
 
 ## Topology
 
-- Cloudflare Workers runs the code. The account needs Workers Paid, because the Worker Loader and Durable Object facets do
-- three workers are the platform: the router owns ingress, sign-in, the access policy, the admin API, the MCP server and one supervisor per applet; the bundler turns applet source into a worker module; the editor is a page that creates, edits, deploys and manages applets from a browser. On the account they are named `applets-router`, `applets-bundler` and `applets-editor`
-- every applet is a row in the registry, loaded at request time with the Worker Loader and run as a Durable Object facet with its own SQLite
-- one deployment is one group of people. The admin adds an email and that person can sign in, make applets and set each one to `private`, `family` or `public`. Code, logs and settings belong to the applet's owner alone
-- applets are made in the editor, or by an agent over the MCP server, which any MCP client adds with one URL and signs into with OAuth. The repo's own scripts only run and deploy the platform, and push the example applets
-- an `@std` library gives every applet SQLite, key-value storage, blobs, email, AI chat completions, logging and a page shell with no setup
-- `wrangler` deploys the platform and runs all of it locally
+- Cloudflare Workers runs the code. We need a Workers Paid subscription, since both `Worker Loader` and `Durable Object` facets are paywalled.
+- The "platform" is composed of 3 CF workers:
+    - `applets-router`: owns ingress, sign-in, the access policy, the admin API, the MCP server. 
+    - `applets-bundler`: CF workers don't allow runtime code fetching. So, we need to bundle each applet before it's deployed. This worker turns applet source into a dynamic worker module. 
+    - `applets-editor`: an SPA to create, edits, deploys and manages applets. 
 
-Deploying an applet needs no toolchain on the host at all.
+- Each applet is a row in the registry, loaded at request time with the Worker Loader and run as a Durable Object facet with its own SQLite database.
+
+- A deployment is intended for one group of people. The admin adds an email and that person can sign in, make applets and set each one to `private`, `family` (accessible to anyone in the group) or `public` (unauthenticated access). Code, logs and settings belong to the applet's owner alone.
+
+- Applets are made in the editor, or by an agent over the MCP server, which any MCP client adds with one URL and signs into with OAuth. The repo's own scripts only run and deploy the platform, and push the example applets. 
+
+- A `@std` library, that gives every applet SQLite, key-value storage, blobs, email, logging and a page shell.
+
+- The `wrangler` CLI deploys the platform and can also run it all it locally for testing.
 
 # Docs
 
