@@ -96,13 +96,6 @@ const required = (found: Map<string, string>, key: string): Effect.Effect<string
   return Effect.succeed(value);
 };
 
-/** The browser script's one var, when `secrets.env` names another CDP provider; nothing otherwise. */
-export const browserVars = Effect.map(secrets, (found) => {
-  const url = process.env.BROWSER_CDP_URL ?? found.get("BROWSER_CDP_URL");
-
-  return url === undefined ? {} : { BROWSER_CDP_URL: url };
-});
-
 /** The host-only bearer token; the router only ever holds its SHA-256 hash. */
 export const adminToken = Effect.gen(function* () {
   const token = yield* required(yield* secrets, "ADMIN_TOKEN");

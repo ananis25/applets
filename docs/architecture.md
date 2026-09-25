@@ -308,8 +308,6 @@ An applet cannot read the key but it can spend it, any user's applet included, a
 
 There is no Puppeteer API reaching the applet: the page's own JavaScript is the escape hatch, and it crosses RPC as a string. The same five calls as MCP tools would let an agent with no machine of its own iterate against a live page; not built yet, the shape is noted in the browser script.
 
-A `BROWSER_CDP_URL` secret on the browser script, set from `secrets.env` when present, sends every call to another provider's Chrome DevTools Protocol endpoint instead, such as Steel or Browserbase, whose residential IPs some sites need. Puppeteer is given a transport over the Workers `WebSocket`, opened with `fetch` and an `Upgrade` header, because its own transport needs the `ws` package, which Workers do not have.
-
 ## Logs
 
 `@std`'s `log` writes each line twice, to the console and to the router, both tagged with the applet's name and version. Ingress writes one `requests` row per forwarded HTTP request. The supervisor also writes a row when a scheduled, manual or inbox run finishes: 200 when the handler returned, 500 with the error when it threw. These rows show whether a silent handler ran. Whoever writes the row also mints the run's id, a UUID, and sends it to the applet in `x-applet-request`. The generated entry puts it in an `AsyncLocalStorage` around the handler, because the facet serves requests concurrently, and `log` stamps it on each line. So a line joins its `requests` row on `request_id`; a line written outside any handler, or by a version bundled before this existed, has none. Both tables in D1 are a window: a router cron deletes rows older than 7 days. The console line goes to Workers Logs, which the router's config turns on; `vp run tail` follows it live and the Cloudflare dashboard keeps the history.
@@ -398,7 +396,7 @@ Generated component files are excluded from lint and format, since they are not 
 | one wildcard route, routing by hostname in the router | one deploy covers every applet, present and future, and the domain stays out of the repo |
 | applet-to-applet calls dispatched inside `Egress` | a worker's `fetch()` to its own zone skips Workers, and every applet `fetch()` already passes through `Egress` |
 | applets as loaded code run as facets | no deploy per applet, storage isolation from the runtime, sync SQL, egress per applet |
-| three scripts, router, bundler and editor | the router's upload stays small, and a bundler or editor change never touches ingress |
+| four scripts, router, bundler, browser and editor | the router's upload stays small, and a bundler, browser or editor change never touches ingress |
 | the editor as a platform script, not an applet | applets are our own code plus its npm dependencies, trusted less than the platform; the editor needs the admin API, and it ships with the platform |
 | CodeMirror for the editor pane, Pierre's trees for the file tree | CodeMirror is modular, so the page carries only the languages an applet holds, and it measures text from the DOM; Pierre's edit mode placed the caret from canvas widths and drifted under the page's letter-spacing, and Monaco was 13 MB and could not take the page's theme |
 | shadcn on Base UI for the two pages we maintain | components are files we own, one theme in `packages/ui`, and every agent knows the API |

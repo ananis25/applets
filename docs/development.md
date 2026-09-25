@@ -33,7 +33,7 @@ All from this directory, all scripts in `package.json`, run with `vp run`.
 | `vp run deploy <worker>...` | the same for only the workers named, any of `bundler`, `browser`, `editor` and `router`, always in that order |
 | `vp run ship` | `deploy`, then push `examples/preact-app` and `examples/mailbox` as public, each checked to answer 2xx |
 | `vp run templates` | embed the directories under `examples/` into `packages/api/src/templates.json` as the templates a new applet starts from, after changing one |
-| `vp run destroy` | list what the platform holds on the account; `vp run destroy --yes` deletes it: the three workers with every applet's storage, the registry and both buckets. The zone's DNS record, Email Routing and destination addresses stay |
+| `vp run destroy` | list what the platform holds on the account; `vp run destroy --yes` deletes it: the four workers with every applet's storage, the registry and both buckets. The zone's DNS record, Email Routing and destination addresses stay |
 | `vp run tail` | follow the deployed router: one line per request, and the error it logged, if any |
 
 Secrets and the host suffix live in `secrets.env`, copied from `secrets.env.example`, never committed.
@@ -52,7 +52,7 @@ What to run for each kind of change, once "One-time setup" is done.
 | the router, the bundler or `@std`, and want to try it | `vp run dev`, then `vp run push:local examples/preact-app` to fill the local registry |
 | the editor page, and want it live | `vp run deploy editor` |
 | the router, the bundler or `@std` | `vp run deploy router bundler`. `@std` is bundled into the bundler, so it counts as a bundler change |
-| the page and the backend, or you are not sure | `vp run ship`, which deploys all three and pushes two examples as the check |
+| the page and the backend, or you are not sure | `vp run ship`, which deploys all four and pushes two examples as the check |
 | the registry schema, a Durable Object class, a resource name, or anything else the deployed state would fight | `vp run destroy --yes`, then `vp run ship`. It costs one new magic link |
 
 `vp run destroy` without `--yes` is always safe: it prints what exists and deletes nothing.

@@ -2,11 +2,11 @@
  * The platform, deployed and local.
  *
  * `vp run deploy` is the one place that runs `wrangler deploy`: the bundler
- * first, then the editor from a fresh Vite build, then the router, because the
+ * first, then the browser, the editor from a fresh Vite build, and the router, because the
  * router's service bindings resolve at deploy. The registry's migrations are
  * applied just before the router goes up, since the router expects its tables. The router's vars go up as
  * secrets afterwards, and the mail rule is pointed at it. `vp run deploy editor`
- * deploys one of the three alone.
+ * deploys one of the four alone.
  *
  * `vp run destroy` deletes all of it from the account.
  *
@@ -29,7 +29,7 @@ import {
   routeMailTo,
   workerNames,
 } from "./cloudflare.ts";
-import { box, browserVars, CliError, failed, originFor, paths, routerVars } from "./environment.ts";
+import { box, CliError, failed, originFor, paths, routerVars } from "./environment.ts";
 
 const routerConfigName = "wrangler.local.jsonc";
 
@@ -137,10 +137,7 @@ const writeRouterConfig = (id: string) =>
 
 const deployBundler = wrangler(["deploy"], paths.bundlerPackage);
 
-const deployBrowser = Effect.gen(function* () {
-  yield* wrangler(["deploy"], paths.browserPackage);
-  yield* wrangler(["secret", "bulk"], paths.browserPackage, JSON.stringify(yield* browserVars));
-});
+const deployBrowser = wrangler(["deploy"], paths.browserPackage);
 
 const deployEditor = Effect.gen(function* () {
   yield* buildEditor;
@@ -174,7 +171,7 @@ export type Target = keyof typeof deployers;
 
 export const targets: ReadonlyArray<Target> = ["bundler", "browser", "editor", "router"];
 
-/** Deploys the chosen workers, or all three when none is chosen, always in deploy order. */
+/** Deploys the chosen workers, or all four when none is chosen, always in deploy order. */
 export const platformDeploy = (chosen: ReadonlyArray<Target>) =>
   Effect.gen(function* () {
     if (box.hostSuffix === ".localhost") {
@@ -190,7 +187,7 @@ export const platformDeploy = (chosen: ReadonlyArray<Target>) =>
   }).pipe(Effect.provide(Login.layer));
 
 /**
- * Deletes everything `vp run deploy` creates: the three workers with every
+ * Deletes everything `vp run deploy` creates: the four workers with every
  * applet's storage, the registry and both buckets. The router goes first, since
  * it binds the rest. The zone keeps its DNS record, Email Routing and
  * destination addresses, which hold no state. Without `confirmed` it only lists.
@@ -199,9 +196,12 @@ export const platformDestroy = (confirmed: boolean) =>
   Effect.gen(function* () {
     const scripts = yield* workerNames;
 
-    const workers = [resources.router, resources.bundler, resources.editor].filter((name) =>
-      scripts.includes(name),
-    );
+    const workers = [
+      resources.router,
+      resources.bundler,
+      resources.browser,
+      resources.editor,
+    ].filter((name) => scripts.includes(name));
 
     const database = (yield* databaseIds).get(resources.registry);
 

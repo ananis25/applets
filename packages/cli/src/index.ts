@@ -35,7 +35,7 @@ const deployCommand = Command.make(
   "deploy",
   {
     targets: Argument.Literals("target", targets).pipe(
-      Argument.withDescription("the workers to deploy; all three when none is named"),
+      Argument.withDescription("the workers to deploy; all four when none is named"),
       Argument.variadic(),
     ),
   },
