@@ -104,12 +104,44 @@ export type AI = {
   chat(params: ChatParams, request_id?: string): Promise<Response>;
 };
 
+/** When a page counts as loaded. `domcontentloaded` is the default; `networkidle2` waits for the page's own requests to settle, which a page built by JavaScript needs. */
+export type LoadOptions = {
+  readonly waitUntil?: "domcontentloaded" | "load" | "networkidle0" | "networkidle2";
+};
+
+export type ScreenshotOptions = LoadOptions & {
+  readonly fullPage?: boolean;
+  readonly width?: number;
+  readonly height?: number;
+};
+
+/**
+ * A headless browser, by session: one page opened on a URL and held until closed. Every call takes
+ * `request_id`, the run making it, so the router's line about it joins that run.
+ */
+export type Browser = {
+  /** Opens a browser on `url` and returns the session's id. */
+  open(url: string, options?: LoadOptions, request_id?: string): Promise<string>;
+  goto(session: string, url: string, options?: LoadOptions, request_id?: string): Promise<void>;
+  /** What `script`, a JavaScript expression run in the page, evaluates to. */
+  evaluate(session: string, script: string, request_id?: string): Promise<Json>;
+  /** A PNG of the page. */
+  screenshot(
+    session: string,
+    options?: ScreenshotOptions,
+    request_id?: string,
+  ): Promise<Uint8Array>;
+  /** Ends the session. An open one bills until it has idled out. */
+  close(session: string, request_id?: string): Promise<void>;
+};
+
 /** The env the supervisor gives every loaded applet. */
 export type AppletEnv = {
   readonly APPLET_NAME: string;
   readonly APPLET_VERSION: number;
   readonly AI: AI;
   readonly BLOBS: Blobs;
+  readonly BROWSER: Browser;
   readonly EMAIL: Email;
   readonly LOGS: Logs;
   readonly SECRETS: Record<string, string>;

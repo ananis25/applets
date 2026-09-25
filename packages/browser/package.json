@@ -1,0 +1,17 @@
+{
+  "name": "@applets/browser",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The browser script: a headless browser behind @std's browser, reached by the router over a service binding.",
+  "type": "module",
+  "scripts": {
+    "test": "vp test --passWithNoTests"
+  },
+  "dependencies": {
+    "@applets/api": "*",
+    "@cloudflare/puppeteer": "^1.4.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260910.1"
+  }
+}

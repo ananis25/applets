@@ -9,7 +9,7 @@ An applet is a directory. `main.ts` is the entry. Relative imports work without 
 `main.ts` exports named handlers, one per way the applet can be called. `fetch` is required; the other two are there when the applet wants them:
 
 ```ts
-import { sql, kv, blob, email, ai, secret, log, page } from "@std";
+import { sql, kv, blob, email, ai, browser, secret, log, page } from "@std";
 import type { InboundEmail, ScheduledEvent } from "@std";
 
 export async function fetch(request: Request): Promise<Response> { ... }     // every HTTP request
@@ -325,6 +325,40 @@ export async function fetch(request: Request): Promise<Response> {
 - `ai` works with egress `none`; it is not a `fetch()`
 - every call is one line in `logs_list`, `ai chat` with the model, duration, finish reason and usage, or `ai chat failed` with the reason, under the run that made it
 - a public applet lets anyone spend the shared key, and nothing counts calls per applet; put a guard on a public route that calls `ai`
+
+## Browser
+
+Use when the applet needs a page as a browser shows it: one built by JavaScript, or a screenshot.
+
+`browser` loads a URL in a headless browser and hands back what a script run inside the page returns. `evaluate` takes a JavaScript expression as a string and returns its value, which must be JSON-shaped; `html` and `text` are that with a fixed expression. `screenshot` returns a PNG. Every call takes `waitUntil`: the default `domcontentloaded` reads the page as served, and `networkidle2` waits for the page's own requests to settle, which a page built by JavaScript after load needs. Each of these opens and closes its own browser session, which takes a few seconds, so an applet that shows the same page often keeps the result in `kv` and refreshes it on a schedule. A plain `fetch` is faster when the page does not need a browser.
+
+A flow that navigates, a search then its first result, holds one session with `open`. The session has the same calls without the URL, plus `goto`. Close it in a `finally`: an open session bills until it has idled for two minutes.
+
+```ts
+import { browser, kv } from "@std";
+
+const titles = await browser.evaluate<string[]>(
+  "https://news.ycombinator.com",
+  "[...document.querySelectorAll('.titleline > a')].map((a) => a.textContent)",
+);
+const text = await browser.text("https://example.com", { waitUntil: "networkidle2" });
+const png = await browser.screenshot("https://example.com", { fullPage: true });
+
+await kv.put("front-page", titles);
+
+const page = await browser.open("https://duckduckgo.com/html/?q=applets");
+try {
+  const first = await page.evaluate<string>("document.querySelector('.result__a').href");
+  await page.goto(first);
+  await kv.put("first-result", await page.text());
+} finally {
+  await page.close();
+}
+```
+
+- the browser identifies itself as an automated one and honours `robots.txt`; a site that refuses bots refuses it too
+- the platform's Browser Run plan includes a few hours of browser time a month, and a call is billed for the seconds it holds a browser open
+- a failed call throws with the browser's error and is logged as `browser evaluate failed` or `browser screenshot failed`
 
 ## Secrets and logs
 

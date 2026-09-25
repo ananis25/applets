@@ -22,6 +22,7 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Supervisor"] }],
   "services": [
     { "binding": "BUNDLER", "service": "applets-bundler", "entrypoint": "Bundler" },
+    { "binding": "BROWSER", "service": "applets-browser", "entrypoint": "Browser" },
     { "binding": "EDITOR", "service": "applets-editor" },
   ],
   "triggers": { "crons": ["*/10 * * * *"] },

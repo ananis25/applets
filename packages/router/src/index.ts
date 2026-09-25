@@ -19,6 +19,8 @@ export { AI } from "./ai.ts";
 
 export { Blobs } from "./blobs.ts";
 
+export { Browser } from "./browser.ts";
+
 export { Email } from "./email.ts";
 
 export { Supervisor } from "./supervisor.ts";

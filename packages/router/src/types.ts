@@ -1,5 +1,6 @@
 /** The shapes the router's modules share beyond the API contract: the bundler's contract, the supervisor's target, and what travels between them. */
 import type { Applet, EgressMode, Files, LogLevel, RequestKind } from "@applets/api";
+import type { Json, LoadOptions, ScreenshotOptions } from "@applets/api/capabilities";
 
 /** The hostnames under the suffix the router answers itself, so no applet may take them. */
 export const reservedHosts = ["admin", "app", "auth"];
@@ -48,6 +49,15 @@ export type Sender = string | { readonly email: string; readonly name: string };
 /** The bundler's contract: `Bundler.build(files, fresh)` in `packages/bundler`. */
 export type Bundler = {
   build(files: Files, fresh?: boolean): Promise<import("../../bundler/src/index.ts").Build>;
+};
+
+/** The browser script's contract: `Browser` in `packages/browser`. */
+export type BrowserScript = {
+  open(url: string, options?: LoadOptions): Promise<string>;
+  goto(session: string, url: string, options?: LoadOptions): Promise<void>;
+  evaluate(session: string, script: string): Promise<Json>;
+  screenshot(session: string, options?: ScreenshotOptions): Promise<Uint8Array>;
+  close(session: string): Promise<void>;
 };
 
 /** A build that produced a bundle. */

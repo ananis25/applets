@@ -28,9 +28,10 @@ A limitation is that you're limited to the JS/TS stack but that's pretty suffici
 ## Topology
 
 - Cloudflare Workers runs the code. We need a Workers Paid subscription, since both `Worker Loader` and `Durable Object` facets are paywalled.
-- The "platform" is composed of 3 CF workers:
+- The "platform" is composed of 4 CF workers:
     - `applets-router`: owns ingress, sign-in, the access policy, the admin API, the MCP server. 
     - `applets-bundler`: CF workers don't allow runtime code fetching. So, we need to bundle each applet before it's deployed. This worker turns applet source into a dynamic worker module. 
+    - `applets-browser`: a headless browser behind `@std`'s `browser`, Puppeteer over Cloudflare's Browser Run.
     - `applets-editor`: an SPA to create, edits, deploys and manages applets. 
 
 - Each applet is a row in the registry, loaded at request time with the Worker Loader and run as a Durable Object facet with its own SQLite database.
@@ -39,7 +40,7 @@ A limitation is that you're limited to the JS/TS stack but that's pretty suffici
 
 - Applets are made in the editor, or by an agent over the MCP server, which any MCP client adds with one URL and signs into with OAuth. The repo's own scripts only run and deploy the platform, and push the example applets. 
 
-- A `@std` library, that gives every applet SQLite, key-value storage, blobs, email, logging and a page shell.
+- A `@std` library, that gives every applet SQLite, key-value storage, blobs, email, AI, a headless browser, logging and a page shell.
 
 - The `wrangler` CLI deploys the platform and can also run it all it locally for testing.
 

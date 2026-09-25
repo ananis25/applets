@@ -1,7 +1,7 @@
 /**
- * The library applets import: `sql`, `kv`, `blob`, `email`, `ai`, `secret`, `log`
- * and `page`. SQLite and KV use the applet's Durable Object storage through
- * `bind(ctx)`. Blobs, email and AI use applet-scoped capabilities on the router.
+ * The library applets import: `sql`, `kv`, `blob`, `email`, `ai`, `browser`, `secret`,
+ * `log` and `page`. SQLite and KV use the applet's Durable Object storage through
+ * `bind(ctx)`. Blobs, email, AI and the browser use applet-scoped capabilities on the router.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 
@@ -17,7 +17,9 @@ import type {
   Statement as InspectedStatement,
   Json,
   LogLevel,
+  LoadOptions,
   OutboundEmail,
+  ScreenshotOptions,
 } from "@applets/api/capabilities";
 
 export type {
@@ -30,8 +32,10 @@ export type {
   InspectionResult,
   Statement as InspectedStatement,
   Json,
+  LoadOptions,
   OutboundEmail,
   ScheduledEvent,
+  ScreenshotOptions,
 } from "@applets/api/capabilities";
 
 export type BlobValue = string | ArrayBuffer | ArrayBufferView | Blob | ReadableStream;
@@ -413,6 +417,71 @@ const write = (level: LogLevel) => (message: string, data?: Json) => {
  * and to the router over an RPC the applet does not wait for, so
  * the editor's Logs page sees it within a second.
  */
+const htmlOf = "document.documentElement.outerHTML";
+
+const textOf = "document.body.innerText";
+
+/** One page in a headless browser, held open across calls. Close it when done: an open session bills until it has idled for two minutes. */
+export type Session = {
+  goto(url: string, options?: LoadOptions): Promise<void>;
+  /** What `script`, a JavaScript expression run in the page, evaluates to: `"document.title"`, or a JSON-shaped value built from the DOM. */
+  evaluate<T extends Json = Json>(script: string): Promise<T>;
+  /** The page's HTML after its scripts have run. */
+  html(): Promise<string>;
+  /** The page's visible text, as a reader would see it. */
+  text(): Promise<string>;
+  /** A PNG of the page. `fullPage` scrolls the whole page into it; `width` and `height` set the viewport. */
+  screenshot(options?: ScreenshotOptions): Promise<Uint8Array>;
+  close(): Promise<void>;
+};
+
+const session = (id: string): Session => ({
+  goto: (url, options) => env.BROWSER.goto(id, url, options, currentRequest.getStore()),
+  // SAFETY: the caller names the shape its own script returns.
+  evaluate: <T extends Json>(script: string) =>
+    env.BROWSER.evaluate(id, script, currentRequest.getStore()) as Promise<T>,
+  html: () => session(id).evaluate<string>(htmlOf),
+  text: () => session(id).evaluate<string>(textOf),
+  screenshot: (options) => env.BROWSER.screenshot(id, options, currentRequest.getStore()),
+  close: () => env.BROWSER.close(id, currentRequest.getStore()),
+});
+
+/** Opens `url` in a fresh session, hands it to `read`, and closes it however `read` ends. */
+async function withSession<T>(
+  url: string,
+  options: LoadOptions | undefined,
+  read: (page: Session) => Promise<T>,
+): Promise<T> {
+  const page = session(await env.BROWSER.open(url, options, currentRequest.getStore()));
+
+  try {
+    return await read(page);
+  } finally {
+    await page.close();
+  }
+}
+
+/**
+ * A headless browser: a page loaded with its JavaScript run, unlike `fetch`. `open` holds a session
+ * across calls, for a flow that navigates; the rest each open and close one, a few seconds.
+ */
+export const browser = {
+  open: (url: string, options?: LoadOptions): Promise<Session> =>
+    env.BROWSER.open(url, options, currentRequest.getStore()).then(session),
+
+  evaluate: <T extends Json = Json>(url: string, script: string, options?: LoadOptions) =>
+    withSession(url, options, (page) => page.evaluate<T>(script)),
+
+  html: (url: string, options?: LoadOptions): Promise<string> =>
+    withSession(url, options, (page) => page.html()),
+
+  text: (url: string, options?: LoadOptions): Promise<string> =>
+    withSession(url, options, (page) => page.text()),
+
+  screenshot: (url: string, options?: ScreenshotOptions): Promise<Uint8Array> =>
+    withSession(url, options, (page) => page.screenshot(options)),
+};
+
 export const log = {
   debug: write("debug"),
   info: write("info"),

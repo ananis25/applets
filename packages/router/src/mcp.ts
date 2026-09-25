@@ -534,7 +534,7 @@ const handlers = toolkit.toLayer(
 );
 
 /** What every client is told on connect: enough to orient, and where the rest is. */
-const instructions = `Applets is a personal platform for small programs on Cloudflare Workers. An applet is a directory whose entry is main.ts, exporting fetch(request) and optionally scheduled(event) and inbox(message). @std gives it SQLite, key-value storage, blobs, email, AI and logs with no setup. Tools are named object_verb: applet_*, templates_*, files_*, sql_*, kv_*, blobs_*, secrets_*, logs_*, requests_*, emails_*.
+const instructions = `Applets is a personal platform for small programs on Cloudflare Workers. An applet is a directory whose entry is main.ts, exporting fetch(request) and optionally scheduled(event) and inbox(message). @std gives it SQLite, key-value storage, blobs, email, AI, a headless browser and logs with no setup. Tools are named object_verb: applet_*, templates_*, files_*, sql_*, kv_*, blobs_*, secrets_*, logs_*, requests_*, emails_*.
 
 Start with help(): who you act as, where applets answer, and the topics. Before writing an applet, help("applets") once: it is the full guide, and the build refuses code that breaks its rules. Then templates_list and applet_create to start, files_read and files_edit or applet_deploy to change, applet_fetch or applet_run to exercise it, and requests_list and logs_list to see what happened. A change is not done until they show it working.`;
 

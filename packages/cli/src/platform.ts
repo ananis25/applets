@@ -29,7 +29,7 @@ import {
   routeMailTo,
   workerNames,
 } from "./cloudflare.ts";
-import { box, CliError, failed, originFor, paths, routerVars } from "./environment.ts";
+import { box, browserVars, CliError, failed, originFor, paths, routerVars } from "./environment.ts";
 
 const routerConfigName = "wrangler.local.jsonc";
 
@@ -86,6 +86,7 @@ const buildEditor = attached("vp", ["build"], { cwd: paths.editorPackage });
 const resources = {
   router: "applets-router",
   bundler: "applets-bundler",
+  browser: "applets-browser",
   editor: "applets-editor",
   registry: "applets-registry",
   blobs: "applets-blobs",
@@ -136,6 +137,11 @@ const writeRouterConfig = (id: string) =>
 
 const deployBundler = wrangler(["deploy"], paths.bundlerPackage);
 
+const deployBrowser = Effect.gen(function* () {
+  yield* wrangler(["deploy"], paths.browserPackage);
+  yield* wrangler(["secret", "bulk"], paths.browserPackage, JSON.stringify(yield* browserVars));
+});
+
 const deployEditor = Effect.gen(function* () {
   yield* buildEditor;
   yield* wrangler(["deploy"], paths.editorPackage);
@@ -157,11 +163,16 @@ const deployRouter = Effect.gen(function* () {
 });
 
 /** In deploy order: the router's service bindings resolve at its deploy, so it goes last. */
-const deployers = { bundler: deployBundler, editor: deployEditor, router: deployRouter };
+const deployers = {
+  bundler: deployBundler,
+  browser: deployBrowser,
+  editor: deployEditor,
+  router: deployRouter,
+};
 
 export type Target = keyof typeof deployers;
 
-export const targets: ReadonlyArray<Target> = ["bundler", "editor", "router"];
+export const targets: ReadonlyArray<Target> = ["bundler", "browser", "editor", "router"];
 
 /** Deploys the chosen workers, or all three when none is chosen, always in deploy order. */
 export const platformDeploy = (chosen: ReadonlyArray<Target>) =>
@@ -249,7 +260,7 @@ const writeDevVars = Effect.gen(function* () {
 });
 
 /**
- * The router and the bundler in one local `wrangler dev`, and the editor page
+ * The router, the bundler and the browser in one local `wrangler dev`, and the editor page
  * on Vite proxying `/api/` to it. The router's config comes first because the
  * first config gets the listener. The editor worker is left out: its page
  * needs a session, and `*.localhost` cannot hold one. Either process exiting
@@ -259,7 +270,14 @@ export const platformDev = Effect.gen(function* () {
   yield* writeDevVars;
   yield* applyMigrations("--local", "packages/router/wrangler.jsonc", paths.repoRoot);
 
-  const configs = ["-c", "packages/router/wrangler.jsonc", "-c", "packages/bundler/wrangler.jsonc"];
+  const configs = [
+    "-c",
+    "packages/router/wrangler.jsonc",
+    "-c",
+    "packages/bundler/wrangler.jsonc",
+    "-c",
+    "packages/browser/wrangler.jsonc",
+  ];
 
   yield* Effect.raceFirst(
     attached("vpx", ["wrangler", "dev", ...configs], { cwd: paths.repoRoot }),

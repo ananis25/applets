@@ -22,6 +22,7 @@ The cost: one facet instance per applet, so one applet's storage-only work is se
 the zone, one wildcard route, *<suffix>/*
   applets-router    every request on the suffix enters here
   applets-bundler   reached only over the router's BUNDLER service binding
+  applets-browser   reached only over the router's BROWSER service binding
   applets-editor    reached only over the router's EDITOR service binding
 
 loaded code, no wrangler config, one module per version in a registry row
@@ -33,7 +34,7 @@ Terms used throughout:
 - a facet is a Durable Object running inside another one, with its own SQLite, from a class the parent loaded
 - a script, or worker, is one Wrangler project, deployed with `wrangler deploy`
 
-The router is the whole front door. One route, `*<suffix>/*`, sends every hostname one level under the suffix to it, and it routes by hostname from there. The apex is not matched. Every host under the suffix is public and the router gates what needs gating: a user for `private` and `family` applets and for the editor on `app.<suffix>`, a bearer key on `admin.<suffix>`, an OAuth access token on `mcp.<suffix>`. The bundler and the editor have no route; they exist only because the router's `services` name them, which is why the router deploys last.
+The router is the whole front door. One route, `*<suffix>/*`, sends every hostname one level under the suffix to it, and it routes by hostname from there. The apex is not matched. Every host under the suffix is public and the router gates what needs gating: a user for `private` and `family` applets and for the editor on `app.<suffix>`, a bearer key on `admin.<suffix>`, an OAuth access token on `mcp.<suffix>`. The bundler, the browser and the editor have no route; they exist only because the router's `services` name them, which is why the router deploys last.
 
 The suffix is host-specific and never committed. It lives in `secrets.env`, and `vp run deploy` derives the route and the zone name from it.
 
@@ -50,6 +51,8 @@ The router, `packages/router`. Bindings: `LOADER` the Worker Loader, `REGISTRY` 
 - five `WorkerEntrypoint` classes that are capabilities, not routes: `Logs`, `Blobs`, `Email`, `AI` and `Egress`. The loader stamps each with the applet's name and version and puts it in the loaded applet's `env`
 
 The bundler, `packages/bundler`. One binding, `DEPS`, the R2 cache of installed `node_modules` trees. It exports the `Bundler` entrypoint the router calls as `env.BUNDLER.build(files)`. It has no routes.
+
+The browser, `packages/browser`. One binding, `BROWSER`, Cloudflare's Browser Run. It exports the `Browser` entrypoint the router calls as `env.BROWSER.evaluate(url, script)` and `env.BROWSER.screenshot(url)`. It has no routes.
 
 The editor, `packages/editor`. Static assets plus a `worker.ts` that forwards to `ASSETS`. Two pages: the editor at `/`, and the sign-in page at `/auth`, which the router serves on `auth.<suffix>` as `/`, `/confirm` and the OAuth `/consent`. The sign-in page is a top-level `auth.html`, not a nested `auth/index.html`: the assets binding would redirect `/auth` to `/auth/`, the router rewrites every sign-in path back to `/auth`, and the two would loop. The router sends `app.<suffix>` to it and answers `/api/` itself. It has no bindings.
 
@@ -110,13 +113,14 @@ Account and zone:
 Compute:
 
 - worker `applets-bundler`, deploy: no route, `cpu_ms` limit 60000, `nodejs_compat`
+- worker `applets-browser`, deploy: no route, the Browser Run binding `BROWSER`, `nodejs_compat`
 - worker `applets-editor`, deploy: no route, static assets from the Vite build in `packages/editor/dist`, so the build runs first
 - worker `applets-router`, deploy: last of the three, because its service bindings to the other two resolve at deploy
 - route `*<suffix>/*` on the zone to `applets-router`, deploy: written into the git-ignored `wrangler.local.jsonc`, since the suffix is never committed
 - cron trigger `*/10 * * * *` on the router, deploy
 - Durable Object namespace `Supervisor` on the router, SQLite-backed, migration tag `v1`, deploy: deleting the router deletes every applet's storage with it
 - worker loader binding `LOADER` on the router, deploy: loads applet code from registry rows, no resource behind it
-- service bindings on the router, deploy: `BUNDLER` to `applets-bundler` entrypoint `Bundler`, `EDITOR` to `applets-editor`
+- service bindings on the router, deploy: `BUNDLER` to `applets-bundler` entrypoint `Bundler`, `BROWSER` to `applets-browser` entrypoint `Browser`, `EDITOR` to `applets-editor`
 - Workers Logs on the router, deploy: `observability.logs.enabled`
 
 Storage:
@@ -178,7 +182,7 @@ The `/main.js` branch is only generated when the applet has a `client/` director
 
 ## The router
 
-`packages/router/wrangler.jsonc` is static and committed: the loader binding, the registry D1 with no id, the `Supervisor` Durable Object, the service bindings to the bundler and the editor, and a cron every 10 minutes that vacuums old rows. It has no route, because with one `wrangler dev` rewrites the request host and the router routes by host. `vp run deploy` writes a copy beside it as `wrangler.local.jsonc`, git-ignored, with the wildcard route and the registry's database id spliced in, and deploys that. The deploy looks the `applets-registry` database up by name and creates it when the account has none, so no resource id is committed anywhere. It names the id itself because wrangler would otherwise inherit it from the deployed router's settings, which fails once that database has been deleted. Wrangler creates the two R2 buckets on the first deploy and finds them by name after that.
+`packages/router/wrangler.jsonc` is static and committed: the loader binding, the registry D1 with no id, the `Supervisor` Durable Object, the service bindings to the bundler, the browser and the editor, and a cron every 10 minutes that vacuums old rows. It has no route, because with one `wrangler dev` rewrites the request host and the router routes by host. `vp run deploy` writes a copy beside it as `wrangler.local.jsonc`, git-ignored, with the wildcard route and the registry's database id spliced in, and deploys that. The deploy looks the `applets-registry` database up by name and creates it when the account has none, so no resource id is committed anywhere. It names the id itself because wrangler would otherwise inherit it from the deployed router's settings, which fails once that database has been deleted. Wrangler creates the two R2 buckets on the first deploy and finds them by name after that.
 
 Request flow for `<applet>.<suffix>/path`:
 
@@ -297,6 +301,14 @@ The `emails` table holds no bodies, only the row above, and nothing else keeps t
 Every call ends as one line in the applet's log, written by the router: `ai chat` with the model OpenRouter resolved, the duration, the finish reason, the usage and OpenRouter's generation id, or `ai chat failed` with the reason. For a stream the router reads the events as it forwards them and writes the line when the stream ends, which is the only place a failure mid-stream shows. `@std` sends the run's id with the call, so the line sits under its request on the Logs page.
 
 An applet cannot read the key but it can spend it, any user's applet included, and a public applet lets anyone do so. The limit is the credit limit set on the key at OpenRouter; nothing here counts calls per applet.
+
+## Browser
+
+`browser` in `@std` is a headless browser, and the third script, `applets-browser` in `packages/browser`, is where it runs: Puppeteer over Cloudflare's Browser Run binding, which only that worker holds. Puppeteer is 11 MB of package, so it lives neither in `@std`, which is bundled into every applet, nor in the router. `@std` calls the router's `Browser` capability over RPC, like `AI`, which writes the log line, `browser evaluate` or `browser screenshot` with the URL and the duration, or the failure, and forwards the call to the browser script over its service binding. The unit is a session, one page in a browser opened on a URL: `open` launches with Browser Run's `keep_alive` and detaches, and `goto`, `evaluate` and `screenshot` reattach by session id, work and detach again, so no call holds a connection and a session that is never closed ends on its own after two idle minutes. `close` ends it at once, which is when its billing stops. `@std`'s one-shot `evaluate`, `html`, `text` and `screenshot` are `open`, the call and `close` in a `finally`; `browser.open` hands the applet the session for a flow that navigates.
+
+There is no Puppeteer API reaching the applet: the page's own JavaScript is the escape hatch, and it crosses RPC as a string. The same five calls as MCP tools would let an agent with no machine of its own iterate against a live page; not built yet, the shape is noted in the browser script.
+
+A `BROWSER_CDP_URL` secret on the browser script, set from `secrets.env` when present, sends every call to another provider's Chrome DevTools Protocol endpoint instead, such as Steel or Browserbase, whose residential IPs some sites need. Puppeteer is given a transport over the Workers `WebSocket`, opened with `fetch` and an `Upgrade` header, because its own transport needs the `ws` package, which Workers do not have.
 
 ## Logs
 

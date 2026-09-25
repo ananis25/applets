@@ -18,7 +18,7 @@
     "remove": "node packages/cli/src/index.ts remove",
     "remove:local": "APPLET_HOST_SUFFIX=.localhost node packages/cli/src/index.ts remove",
     "ship": "vp run deploy && vp run push --visibility public examples/preact-app && vp run push --visibility public examples/mailbox",
-    "tail": "vpx wrangler tail applets-router",
+    "tail": "node tools/tail.ts",
     "templates": "node tools/templates.ts",
     "prepare": "vp config --no-agent"
   },

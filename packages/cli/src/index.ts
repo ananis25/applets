@@ -40,7 +40,9 @@ const deployCommand = Command.make(
     ),
   },
   ({ targets: chosen }) => platformDeploy(chosen),
-).pipe(Command.withDescription("wrangler deploy the bundler, the editor and the router"));
+).pipe(
+  Command.withDescription("wrangler deploy the bundler, the browser, the editor and the router"),
+);
 
 const destroyCommand = Command.make(
   "destroy",

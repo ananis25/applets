@@ -305,6 +305,7 @@ export class Supervisor extends DurableObject<Cloudflare.Env> {
           APPLET_VERSION: target.version,
           AI: this.ctx.exports.AI({ props }),
           BLOBS: this.ctx.exports.Blobs({ props }),
+          BROWSER: this.ctx.exports.Browser({ props }),
           EMAIL: this.ctx.exports.Email({ props }),
           LOGS: this.ctx.exports.Logs({ props }),
           SECRETS: secrets,

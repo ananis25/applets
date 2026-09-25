@@ -29,12 +29,12 @@ All from this directory, all scripts in `package.json`, run with `vp run`.
 | `vp run dev:remote` | the editor page on localhost against the deployed platform, see "Local development" |
 | `vp run push <path>` | upload one applet directory to the deployed platform; `push:local` for the local one. A new applet is `private`, and `--visibility family` or `--visibility public` opens this one; without the flag a push leaves the setting alone |
 | `vp run remove <name>` | delete one applet from the deployed platform with its versions, storage and blobs; `remove:local` for the local one |
-| `vp run deploy` | build the editor, `wrangler deploy` the bundler, the editor and the router, upload the router's secrets, and point the mail catch-all rule at the router. The platform deploys when the platform changes, not when an applet does |
-| `vp run deploy <worker>...` | the same for only the workers named, any of `bundler`, `editor` and `router`, always in that order |
+| `vp run deploy` | build the editor, `wrangler deploy` the bundler, the browser, the editor and the router, upload the router's secrets, and point the mail catch-all rule at the router. The platform deploys when the platform changes, not when an applet does |
+| `vp run deploy <worker>...` | the same for only the workers named, any of `bundler`, `browser`, `editor` and `router`, always in that order |
 | `vp run ship` | `deploy`, then push `examples/preact-app` and `examples/mailbox` as public, each checked to answer 2xx |
 | `vp run templates` | embed the directories under `examples/` into `packages/api/src/templates.json` as the templates a new applet starts from, after changing one |
 | `vp run destroy` | list what the platform holds on the account; `vp run destroy --yes` deletes it: the three workers with every applet's storage, the registry and both buckets. The zone's DNS record, Email Routing and destination addresses stay |
-| `vp run tail` | follow the deployed router's console output |
+| `vp run tail` | follow the deployed router: one line per request, and the error it logged, if any |
 
 Secrets and the host suffix live in `secrets.env`, copied from `secrets.env.example`, never committed.
 
@@ -74,7 +74,7 @@ There are two ways to run the platform on your machine. Both open the same edito
 
 `vp run dev` starts two processes and stops both when either exits:
 
-- `wrangler dev` with the router and the bundler on port 8787. D1, R2 and Durable Object state are local files under `.wrangler/`. Nothing reaches the account
+- `wrangler dev` with the router, the bundler and the browser on port 8787. D1, R2 and Durable Object state are local files under `.wrangler/`. Only the browser's Browser Run binding reaches the account, as a remote binding
 - the editor page on Vite, which proxies `/api/` to `http://admin.localhost:8787` with the admin token
 
 `<applet>.localhost` resolves to loopback in every browser, so the router routes by hostname with no DNS. Before it starts, the script writes `packages/router/.dev.vars` from `secrets.env`, always with the `.localhost` suffix whatever the file names.
@@ -109,6 +109,7 @@ applets/
   packages/
     router/            the first script, the only one with a route
     bundler/           the second script, esbuild-wasm plus an npm installer
+    browser/           the third script, Puppeteer over Browser Run
     std/               the library applets import
     cli/               the repo's scripts: push, deploy, dev
     editor/            the third script, a Vite React page over the admin API

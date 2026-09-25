@@ -1,5 +1,5 @@
 /** The router's bindings and vars, and the shape of `ctx.exports`. */
-import type { Bundler } from "./types.ts";
+import type { BrowserScript, Bundler } from "./types.ts";
 
 declare global {
   namespace Cloudflare {
@@ -10,6 +10,7 @@ declare global {
       readonly MAILER: SendEmail;
       readonly SUPERVISOR: DurableObjectNamespace<import("./supervisor.ts").Supervisor>;
       readonly BUNDLER: Bundler;
+      readonly BROWSER: BrowserScript;
       readonly EDITOR: Fetcher;
       readonly ADMIN_TOKEN_HASH: string;
       readonly HOST_SUFFIX: string;
