@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@applets/ui/components/ui/empty";
-import { GlobalRail, RailFrame } from "./rail.tsx";
+import { GlobalRail, RailFrame, RailTrigger } from "./rail.tsx";
 
 /** The frame around every platform page: the global rail and the page beside it. */
 export function Shell({ children }: { children: ReactNode }) {
@@ -8,7 +8,12 @@ export function Shell({ children }: { children: ReactNode }) {
     <RailFrame>
       <title>Applets</title>
       <GlobalRail />
-      <main className="min-w-0 flex-1 overflow-auto">{children}</main>
+      <main className="min-w-0 flex-1 overflow-auto">
+        <div className="border-b bg-card px-3 py-2 md:hidden">
+          <RailTrigger />
+        </div>
+        {children}
+      </main>
     </RailFrame>
   );
 }

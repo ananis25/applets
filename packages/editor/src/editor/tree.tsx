@@ -31,7 +31,7 @@ async function add() {
 }
 
 /** The file list on Pierre's tree: click opens, right-click deletes, the active file is selected. */
-export function Tree() {
+export function Tree({ onOpenFile }: { onOpenFile?: () => void }) {
   const files = useStore((state) => state.files);
   const activeFile = useStore((state) => state.activeFile);
   const viewing = useStore((state) => state.version !== null);
@@ -51,7 +51,11 @@ export function Tree() {
     onSelectionChange(selected) {
       const path = selected[0];
 
-      if (path && model.getItem(path)?.isDirectory() === false) openFile(path);
+      if (path && model.getItem(path)?.isDirectory() === false) {
+        openFile(path);
+
+        if (path !== activeFile) onOpenFile?.();
+      }
     },
   });
 
@@ -76,7 +80,7 @@ export function Tree() {
   }, [model, dirty]);
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col bg-background">
+    <aside className="flex h-full w-56 shrink-0 flex-col bg-background">
       <div className="flex items-center justify-between px-3 py-2 text-xs font-semibold uppercase tracking-wide">
         Files
         <Button

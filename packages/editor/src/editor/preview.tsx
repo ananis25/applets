@@ -15,7 +15,7 @@ export function Preview({ name }: { name: string }) {
   const base = liveUrl(name);
 
   return (
-    <aside className="flex w-2/5 shrink-0 flex-col bg-background">
+    <aside className="fixed inset-0 z-40 flex flex-col bg-background md:static md:w-2/5 md:shrink-0">
       <div className="flex items-center gap-2 border-b border-border px-2 py-1">
         <a
           className="truncate font-mono text-xs underline"

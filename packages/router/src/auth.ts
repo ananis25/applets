@@ -75,12 +75,15 @@ const make = (db: D1Database) =>
       if (vars.HOST_SUFFIX === ".localhost")
         yield* log.info("sign-in link", { url: confirmUrl(vars.AUTH_URL, url) });
 
+      const link = confirmUrl(vars.AUTH_URL, url);
+
       yield* mailer.send(
         { email: vars.EMAIL_FROM, name: "applets" },
         {
           to: email,
           subject: "Sign in to applets",
-          text: `Open this link and press the button to sign in. It works once and expires in an hour.\n\n${confirmUrl(vars.AUTH_URL, url)}`,
+          text: `Open this link and press the button to sign in. It works once and expires in an hour.\n\n${link}`,
+          html: `<p>Open this link and press the button to sign in. It works once and expires in an hour.</p><p><a href="${link.replaceAll("&", "&amp;")}">Sign in to applets</a></p>`,
         },
       );
     });

@@ -27,16 +27,18 @@ function secrets(): Map<string, string> {
 }
 
 /**
- * Two pages: the editor at `/` and the sign-in page at `/auth`, both served by
- * the editor script. The sign-in page is a top-level `auth.html`, not
- * `auth/index.html`: the router forwards every sign-in path as `/auth`, and
- * the assets binding would redirect that to `/auth/` for a nested `index.html`.
+ * Three pages: the editor at `/`, the sign-in page at `/auth` and the family
+ * launcher at `/home`, all served by the editor script. The latter two are
+ * top-level `auth.html` and `home.html`, not `auth/index.html`: the router
+ * forwards their hosts' `/` as `/auth` and `/home`, and the assets binding
+ * would redirect that to `/auth/` for a nested `index.html`.
  */
 const build = {
   rollupOptions: {
     input: {
       editor: new URL("index.html", import.meta.url).pathname,
       auth: new URL("auth.html", import.meta.url).pathname,
+      home: new URL("home.html", import.meta.url).pathname,
     },
   },
 };

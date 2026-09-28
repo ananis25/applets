@@ -3,7 +3,7 @@
  * deploy, switch pages, roll back. `fetch` is replaced per test with a small
  * table of responses; a question the page asks is answered by clicking in its dialog.
  */
-import { render } from "vitest-browser-react";
+import { cleanup, render } from "vitest-browser-react";
 import { z } from "zod";
 import { afterEach, beforeEach, expect, test, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -186,7 +186,8 @@ beforeEach(async () => {
   localStorage.clear();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await cleanup();
   closeEditor();
   vi.restoreAllMocks();
   document.getElementById("root")?.remove();
@@ -200,6 +201,21 @@ test("opens an applet on main.ts with its files in the tree", async () => {
   await expect.element(page.getByRole("treeitem", { name: /main\.ts/ })).toBeVisible();
   await expect.element(page.getByRole("treeitem", { name: /util\.ts/ })).toBeVisible();
   await expect.element(page.getByRole("button", { name: "Save" })).toBeDisabled();
+});
+
+test("phone navigation and files open without covering the editor", async () => {
+  await page.viewport(390, 844);
+  await openAt("/applets/hello/code");
+
+  await expect.element(tab("main.ts")).toBeVisible();
+  await page.getByRole("button", { name: "Toggle Sidebar" }).click();
+  await expect.element(page.getByRole("link", { name: "Code" })).toBeVisible();
+  await page.getByRole("link", { name: "Code" }).click();
+  await page.getByRole("button", { name: "Files" }).click();
+  await page.getByRole("treeitem", { name: /util\.ts/ }).click();
+
+  await expect.element(tab("util.ts")).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Files" })).toBeVisible();
 });
 
 test("an edit enables Save, and saving stores a draft", async () => {

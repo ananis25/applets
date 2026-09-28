@@ -1,6 +1,6 @@
 /**
  * Ingress. Routes by hostname: the admin API on `admin.`, sign-in and OAuth on
- * `auth.`, the editor on `app.`, the MCP server on `MCP_URL`'s host, every
+ * `auth.`, the editor on `app.`, the family launcher on `home.`, the MCP server on `MCP_URL`'s host, every
  * other host to that applet's Supervisor after the policy check. One Effect over the request in context; the tagged errors it
  * fails with become responses in one place at the bottom. No
  * `cloudflare:workers` import, so vitest loads it with test layers.
@@ -121,6 +121,44 @@ const editorHost = Effect.fn("Ingress.editor")(function* (
     return yield* new Forbidden({ message: "the editor's own page only" });
 
   return yield* adminApi(request, subject, "/api");
+});
+
+/**
+ * The launcher on `home.`: the editor script's `/home` page, a list of applets the
+ * signed-in person may open, and nothing about their code. `/api/applets` is the
+ * one endpoint, and it only answers the launcher's own page.
+ */
+const homeHost = Effect.fn("Ingress.home")(function* (
+  request: HttpServerRequest.HttpServerRequest,
+) {
+  const auth = yield* Auth;
+  const incoming = yield* web(request);
+  const subject = yield* auth.subject(incoming.headers);
+
+  if (subject === null) return yield* new Unauthorized({ message: "sign in first" });
+
+  const path = pathOf(request);
+
+  if (path === "/api/applets") {
+    if (isCrossOrigin(incoming))
+      return yield* new Forbidden({ message: "the launcher's own page only" });
+
+    const registry = yield* Registry;
+    const applets = yield* registry.listApplets(subject.email, true);
+
+    return HttpServerResponse.jsonUnsafe({
+      applets: applets.filter(
+        (applet) => applet.current_version !== null && can(subject, "use", applet),
+      ),
+    });
+  }
+
+  if (path !== "/") return yield* fromEditor(incoming);
+
+  const url = new URL(incoming.url);
+  url.pathname = "/home";
+
+  return yield* fromEditor(new Request(url, incoming));
 });
 
 /** The admin API for scripts. It takes a bearer key and never a cookie, so no page on a sibling host can call it as its visitor. Its OpenAPI document and the docs page over it are open. */
@@ -401,6 +439,8 @@ export const handle = Effect.gen(function* () {
   if (host === new URL(MCP_URL).hostname) return yield* mcpHost(request);
 
   if (host === `app${suffix}`) return yield* editorHost(request);
+
+  if (host === `home${suffix}`) return yield* homeHost(request);
 
   if (host === `admin${suffix}`) return yield* adminHost(request);
 

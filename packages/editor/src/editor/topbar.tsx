@@ -14,6 +14,7 @@ import { Link } from "@tanstack/react-router";
 import { appletQuery, filesQuery } from "../queries.ts";
 import { appletLink, liveUrl, relTime, type View } from "../urls.ts";
 import { anyDirty, togglePreview, useStore } from "../store.ts";
+import { RailTrigger } from "../rail.tsx";
 import { useDeploy, useDeploying, useSaveDraft } from "./mutations.ts";
 
 /** The state of the applet in a few words: the version showing, and whether it is a draft, deployed or rolled back. */
@@ -50,7 +51,8 @@ export function Topbar({ name, view }: { name: string; view: View }) {
   const crumb = view === "code" ? activeFile : view;
 
   return (
-    <header className="flex items-center gap-2 border-b border-border bg-card px-3 py-2">
+    <header className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-2">
+      <RailTrigger />
       <Breadcrumb className="min-w-0">
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -74,7 +76,10 @@ export function Topbar({ name, view }: { name: string; view: View }) {
           )}
         </BreadcrumbList>
       </Breadcrumb>
-      <Badge className="ml-2" variant={hasDraft && !viewing ? "default" : "secondary"}>
+      <Badge
+        className="ml-2 hidden sm:inline-flex"
+        variant={hasDraft && !viewing ? "default" : "secondary"}
+      >
         {pill}
       </Badge>
       <span className="ml-auto hidden items-center gap-1 text-xs lg:flex">
@@ -102,6 +107,7 @@ export function Topbar({ name, view }: { name: string; view: View }) {
       <Button
         variant="outline"
         size="sm"
+        className="hidden sm:inline-flex"
         nativeButton={false}
         render={<a href={liveUrl(name)} target="_blank" rel="noopener" />}
       >

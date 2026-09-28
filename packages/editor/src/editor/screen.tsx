@@ -1,6 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useEffectEvent, useRef } from "react";
+import { lazy, Suspense, useEffect, useEffectEvent, useRef, useState } from "react";
+import { Button } from "@applets/ui/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@applets/ui/components/ui/sheet";
 import type { Files } from "@applets/api";
 import { ask } from "../ask.tsx";
 import { Failure } from "../failure.tsx";
@@ -120,12 +128,12 @@ export function Screen({
   }
 
   return (
-    <div className="flex h-full flex-col bg-background">
+    <RailFrame>
       <title>{`${name} — Applets`}</title>
-      <Topbar name={name} view={view} />
-      <RailFrame className="flex-1">
-        <AppletRail name={name} version={version} />
-        <main className="flex min-w-0 flex-1">
+      <AppletRail name={name} version={version} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Topbar name={name} view={view} />
+        <main className="flex min-h-0 min-w-0 flex-1">
           {view === "code" && <CodePage name={name} />}
           {isStream(view) && <Stream name={name} view={view} version={version} />}
           {view === "sqlite" && <Sqlite name={name} />}
@@ -135,9 +143,9 @@ export function Screen({
           {view === "versions" && <Versions name={name} />}
           {view === "settings" && <Settings name={name} />}
         </main>
-      </RailFrame>
+      </div>
       <Palette name={name} />
-    </div>
+    </RailFrame>
   );
 }
 
@@ -170,11 +178,25 @@ function StatusLine({ name }: { name: string }) {
 
 function CodePage({ name }: { name: string }) {
   const previewOpen = useStore((state) => state.previewOpen);
+  const [filesOpen, setFilesOpen] = useState(false);
 
   return (
     <>
-      <Tree />
+      <div className="hidden md:flex">
+        <Tree />
+      </div>
       <section className="flex min-w-0 flex-1 flex-col border-x border-border bg-card">
+        <div className="border-b p-1 md:hidden">
+          <Sheet open={filesOpen} onOpenChange={setFilesOpen}>
+            <SheetTrigger render={<Button variant="outline" size="sm" />}>Files</SheetTrigger>
+            <SheetContent side="left" className="w-72 gap-0 p-0" showCloseButton={false}>
+              <SheetHeader className="border-b">
+                <SheetTitle>Files</SheetTitle>
+              </SheetHeader>
+              <Tree onOpenFile={() => setFilesOpen(false)} />
+            </SheetContent>
+          </Sheet>
+        </div>
         <Tabs />
         <Suspense fallback={<div className="flex-1" />}>
           <Code />

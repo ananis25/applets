@@ -34,7 +34,7 @@ Terms used throughout:
 - a facet is a Durable Object running inside another one, with its own SQLite, from a class the parent loaded
 - a script, or worker, is one Wrangler project, deployed with `wrangler deploy`
 
-The router is the whole front door. One route, `*<suffix>/*`, sends every hostname one level under the suffix to it, and it routes by hostname from there. The apex is not matched. Every host under the suffix is public and the router gates what needs gating: a user for `private` and `family` applets and for the editor on `app.<suffix>`, a bearer key on `admin.<suffix>`, an OAuth access token on `mcp.<suffix>`. The bundler, the browser and the editor have no route; they exist only because the router's `services` name them, which is why the router deploys last.
+The router is the whole front door. One route, `*<suffix>/*`, sends every hostname one level under the suffix to it, and it routes by hostname from there. The apex is not matched. Every host under the suffix is public and the router gates what needs gating: a user for `private` and `family` applets, for the editor on `app.<suffix>` and for the launcher on `home.<suffix>`, a bearer key on `admin.<suffix>`, an OAuth access token on `mcp.<suffix>`. The bundler, the browser and the editor have no route; they exist only because the router's `services` name them, which is why the router deploys last.
 
 The suffix is host-specific and never committed. It lives in `secrets.env`, and `vp run deploy` derives the route and the zone name from it.
 
@@ -213,6 +213,7 @@ Hostnames:
 | `admin.<suffix>` | the admin API, bearer key only |
 | `auth.<suffix>` | the sign-in pages from the editor script, and Better Auth's own routes under `/api/auth/` |
 | `app.<suffix>` | the editor page, with the admin API under `/api/`, behind a session |
+| `home.<suffix>` | the launcher: an installable page listing the applets the signed-in person may open, each shown in a frame |
 
 ### Applets calling applets
 
