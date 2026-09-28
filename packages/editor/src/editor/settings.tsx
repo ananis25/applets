@@ -191,9 +191,14 @@ export function Settings({ name }: { name: string }) {
         </dd>
         <dt className="font-semibold">URL</dt>
         <dd>
-          <a className="font-mono text-xs underline" href={url} target="_blank" rel="noopener">
+          <Button
+            variant="link"
+            size="xs"
+            className="px-0 font-mono"
+            render={<a href={url} target="_blank" rel="noopener" />}
+          >
             {url}
-          </a>
+          </Button>
         </dd>
         <dt className="font-semibold">Description</dt>
         <dd>

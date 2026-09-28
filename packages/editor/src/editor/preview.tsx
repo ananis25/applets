@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Button } from "@applets/ui/components/ui/button";
+import { RotateCwIcon, XIcon } from "lucide-react";
+import { Hint } from "../hint.tsx";
 import { Input } from "@applets/ui/components/ui/input";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { appletQuery } from "../queries.ts";
@@ -17,26 +19,30 @@ export function Preview({ name }: { name: string }) {
   return (
     <aside className="fixed inset-0 z-40 flex flex-col bg-background md:static md:w-2/5 md:shrink-0">
       <div className="flex items-center gap-2 border-b border-border px-2 py-1">
-        <a
-          className="truncate font-mono text-xs underline"
-          href={base}
-          target="_blank"
-          rel="noopener"
+        <Button
+          variant="link"
+          size="xs"
+          className="min-w-0 justify-start px-0 font-mono"
+          render={<a href={base} target="_blank" rel="noopener" />}
         >
-          {base}
-        </a>
+          <span className="truncate">{base}</span>
+        </Button>
         <Input
           className="h-7 flex-1 font-mono text-xs"
           value={path}
           onChange={(event) => setPreviewPath(event.target.value)}
           onKeyDown={(event) => event.key === "Enter" && reload()}
         />
-        <Button variant="outline" size="icon-xs" onClick={reload} title="Reload">
-          ↻
-        </Button>
-        <Button variant="outline" size="icon-xs" onClick={() => togglePreview(false)} title="Close">
-          ×
-        </Button>
+        <Hint label="Reload">
+          <Button variant="outline" size="icon-xs" onClick={reload}>
+            <RotateCwIcon />
+          </Button>
+        </Hint>
+        <Hint label="Close">
+          <Button variant="outline" size="icon-xs" onClick={() => togglePreview(false)}>
+            <XIcon />
+          </Button>
+        </Hint>
       </div>
       <iframe
         key={`${live}:${reloads}`}

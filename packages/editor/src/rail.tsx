@@ -28,6 +28,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@applets/ui/components/ui/sidebar";
+import { Hint } from "./hint.tsx";
 import { useMe } from "./queries.ts";
 import { appletLink, versioned, views, type View } from "./urls.ts";
 import { useStore } from "./store.ts";
@@ -80,7 +81,9 @@ function Rail({ children }: { children: ReactNode }) {
   return (
     <Sidebar collapsible="icon" className="border-r">
       <SidebarHeader className="flex-row items-center gap-2 border-b p-2">
-        <SidebarTrigger title="Toggle navigation" />
+        <Hint label="Toggle Sidebar">
+          <SidebarTrigger />
+        </Hint>
         <div className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
           <span className="font-semibold">Applets</span>
           <span
@@ -176,5 +179,9 @@ export function RailFrame({ children, className }: { children: ReactNode; classN
 
 /** Opens the rail on a phone, where it is a drawer over the page. Wider, the rail carries its own toggle. */
 export function RailTrigger() {
-  return <SidebarTrigger className="md:hidden" title="Open navigation" />;
+  return (
+    <Hint label="Toggle Sidebar">
+      <SidebarTrigger className="md:hidden" />
+    </Hint>
+  );
 }

@@ -1,4 +1,6 @@
 import { Button } from "@applets/ui/components/ui/button";
+import { PlusIcon } from "lucide-react";
+import { Hint } from "../hint.tsx";
 import { Card } from "@applets/ui/components/ui/card";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import { useEffect } from "react";
@@ -83,15 +85,11 @@ export function Tree({ onOpenFile }: { onOpenFile?: () => void }) {
     <aside className="flex h-full w-56 shrink-0 flex-col bg-background">
       <div className="flex items-center justify-between px-3 py-2 text-xs font-semibold uppercase tracking-wide">
         Files
-        <Button
-          variant="outline"
-          size="icon-xs"
-          disabled={viewing}
-          onClick={() => void add()}
-          title="Add a file"
-        >
-          +
-        </Button>
+        <Hint label="Add a file">
+          <Button variant="outline" size="icon-xs" disabled={viewing} onClick={() => void add()}>
+            <PlusIcon />
+          </Button>
+        </Hint>
       </div>
       <FileTree
         model={model}

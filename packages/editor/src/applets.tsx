@@ -161,6 +161,7 @@ export function NewApplet() {
             <input
               ref={picker}
               type="file"
+              aria-label="Zip of applet files"
               accept=".zip,application/zip"
               className="hidden"
               onChange={(event) => void pick(event.target.files?.[0])}

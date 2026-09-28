@@ -126,18 +126,23 @@ const editorHost = Effect.fn("Ingress.editor")(function* (
 /**
  * The launcher on `home.`: the editor script's `/home` page, a list of applets the
  * signed-in person may open, and nothing about their code. `/api/applets` is the
- * one endpoint, and it only answers the launcher's own page.
+ * one endpoint, and it only answers the launcher's own page. The manifest and
+ * icons are open, since the browser asks for them with no session.
  */
 const homeHost = Effect.fn("Ingress.home")(function* (
   request: HttpServerRequest.HttpServerRequest,
 ) {
   const auth = yield* Auth;
   const incoming = yield* web(request);
+  const path = pathOf(request);
+
+  // Chrome fetches the manifest and its icons without cookies, and refuses to install without them.
+  if (path === "/manifest.webmanifest" || path.startsWith("/icon-") || path === "/favicon.svg")
+    return yield* fromEditor(incoming);
+
   const subject = yield* auth.subject(incoming.headers);
 
   if (subject === null) return yield* new Unauthorized({ message: "sign in first" });
-
-  const path = pathOf(request);
 
   if (path === "/api/applets") {
     if (isCrossOrigin(incoming))

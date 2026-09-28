@@ -1,6 +1,7 @@
 import { Button } from "@applets/ui/components/ui/button";
 import { Tabs as FileTabs, TabsList, TabsTrigger } from "@applets/ui/components/ui/tabs";
 import { XIcon } from "lucide-react";
+import { Hint } from "../hint.tsx";
 import { useShallow } from "zustand/react/shallow";
 import { ask } from "../ask.tsx";
 import { closeFile, isDirty, openFile, useStore } from "../store.ts";
@@ -44,9 +45,11 @@ export function Tabs() {
               {path.split("/").pop()}
             </TabsTrigger>
             {dirty.includes(path) && <span title="unsaved">●</span>}
-            <Button variant="ghost" size="icon-xs" title="close" onClick={() => void close(path)}>
-              <XIcon />
-            </Button>
+            <Hint label="Close">
+              <Button variant="ghost" size="icon-xs" onClick={() => void close(path)}>
+                <XIcon />
+              </Button>
+            </Hint>
           </div>
         ))}
       </TabsList>

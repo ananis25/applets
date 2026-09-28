@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { Button } from "@applets/ui/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@applets/ui/components/ui/tooltip";
 import { Input } from "@applets/ui/components/ui/input";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ask } from "../ask.tsx";
@@ -68,6 +69,7 @@ export function Blobs({ name }: { name: string }) {
         <input
           ref={picker}
           type="file"
+          aria-label="File to upload"
           className="hidden"
           onChange={(event) => {
             const file = event.target.files?.[0];
@@ -76,16 +78,22 @@ export function Blobs({ name }: { name: string }) {
             if (file !== undefined) upload.mutate(file);
           }}
         />
-        <Button
-          variant="outline"
-          size="xs"
-          className="ml-auto"
-          title="Store a file under the prefix, keyed by its name"
-          disabled={upload.isPending}
-          onClick={() => picker.current?.click()}
-        >
-          upload
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="outline"
+                size="xs"
+                className="ml-auto"
+                disabled={upload.isPending}
+                onClick={() => picker.current?.click()}
+              />
+            }
+          >
+            upload
+          </TooltipTrigger>
+          <TooltipContent>Store a file under the prefix, keyed by its name</TooltipContent>
+        </Tooltip>
         <Button variant="outline" size="xs" onClick={() => void pages.refetch()}>
           refresh
         </Button>

@@ -1,6 +1,6 @@
 {
-  "name": "Home",
-  "short_name": "Home",
+  "name": "HomeApps",
+  "short_name": "HomeApps",
   "description": "The family's applets",
   "start_url": "/",
   "scope": "/",

@@ -40,17 +40,22 @@ const applets: Promise<Listing> = fetch("/api/applets")
 
 function AppletCard({ applet, onOpen }: { applet: AppletSummary; onOpen: () => void }) {
   return (
-    <button type="button" onClick={onOpen} className="text-left">
-      <Card className="h-full flex-row items-center gap-4 px-4 py-4 active:bg-accent">
-        <img src={`${appletUrl(applet.name)}/favicon.ico`} alt="" className="size-12 shrink-0" />
-        <div className="min-w-0">
-          <div className="truncate text-lg font-semibold">{titleOf(applet.name)}</div>
-          {applet.description && (
-            <p className="line-clamp-2 text-sm text-muted-foreground">{applet.description}</p>
-          )}
-        </div>
-      </Card>
-    </button>
+    <Button
+      variant="ghost"
+      className="h-auto w-full justify-start p-0 text-left whitespace-normal"
+      onClick={onOpen}
+      render={<Card className="h-full flex-row items-center gap-4 px-4 py-4 active:bg-accent" />}
+    >
+      <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted">
+        <img src={`${appletUrl(applet.name)}/favicon.ico`} alt="" className="size-8" />
+      </span>
+      <div className="min-w-0">
+        <div className="truncate text-lg font-semibold">{titleOf(applet.name)}</div>
+        {applet.description && (
+          <p className="line-clamp-2 text-sm text-muted-foreground">{applet.description}</p>
+        )}
+      </div>
+    </Button>
   );
 }
 
@@ -110,7 +115,7 @@ export function Launcher() {
 
   return (
     <div className="min-h-full">
-      <h1 className="px-4 pt-6 text-2xl font-semibold">Home</h1>
+      <h1 className="px-4 pt-6 text-2xl font-semibold">HomeApps</h1>
       <Suspense fallback={<p className="p-8 text-center text-muted-foreground">Loading…</p>}>
         <List onOpen={open} />
       </Suspense>
