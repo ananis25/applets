@@ -318,23 +318,28 @@ const make = Effect.gen(function* () {
     /**
      * Records the next version of an applet, numbered from 1, and makes it
      * current. The applet row is created on the
-     * first version, with a fresh id. The version row and the new text it
-     * names land in one batch. Fails with `NameTaken` when another user's
+     * first version, with a fresh id. The applet, version and new text
+     * land in one batch, which also clears the draft. Fails with `NameTaken` when another user's
      * applet holds the name. Answers the applet as it stands after.
      */
     putVersion: Effect.fn("Registry.putVersion")(
       function* (name: string, owner: string, version: NewVersion) {
         const at = now();
 
-        yield* sql`INSERT INTO applets (id, name, owner, description, created_at, updated_at)
-           VALUES (${uuidv7()}, ${name}, ${owner}, ${version.description}, ${at}, ${at}) ON CONFLICT (name) DO NOTHING`;
-
         const applet = yield* getApplet(name);
 
-        if (Option.isNone(applet) || applet.value.owner !== owner)
+        if (Option.isSome(applet) && applet.value.owner !== owner)
           return yield* new NameTaken({ name });
 
-        const { id, current_version } = applet.value;
+        const id = Option.isSome(applet) ? applet.value.id : uuidv7();
+        const current_version = Option.isSome(applet) ? applet.value.current_version : null;
+
+        const create = Option.isNone(applet)
+          ? [
+              sql`INSERT INTO applets (id, name, owner, description, created_at, updated_at)
+              VALUES (${id}, ${name}, ${owner}, ${version.description}, ${at}, ${at})`,
+            ]
+          : [];
 
         const previous =
           current_version === null
@@ -347,17 +352,31 @@ const make = Effect.gen(function* () {
         const files = yield* hashFiles(version.files);
         const bundle = yield* Effect.forEach(splitText(version.server), hashText);
 
-        yield* d1.batch([
-          sql`INSERT INTO versions (id, applet_id, files, bundle, exports, installed, changed, created_at)
+        yield* d1
+          .batch([
+            ...create,
+            sql`INSERT INTO versions (id, applet_id, files, bundle, exports, installed, changed, created_at)
              VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM versions WHERE applet_id = ${id}),
                ${id}, ${JSON.stringify(files.hashes)}, ${JSON.stringify(bundle.map((part) => part.hash))},
                ${JSON.stringify(version.exports)}, ${JSON.stringify(version.installed)},
                ${JSON.stringify(diffFiles(before, files.hashes))}, ${at})`,
-          ...(yield* missing("file_contents", id, files.contents)),
-          ...(yield* missing("bundle_parts", id, bundle)),
-          sql`UPDATE applets SET current_version = (SELECT MAX(id) FROM versions WHERE applet_id = ${id}), updated_at = ${at}
+            ...(yield* missing("file_contents", id, files.contents)),
+            ...(yield* missing("bundle_parts", id, bundle)),
+            sql`UPDATE applets SET current_version = (SELECT MAX(id) FROM versions WHERE applet_id = ${id}), updated_at = ${at}
              WHERE id = ${id}`,
-        ]);
+            sql`DELETE FROM drafts WHERE applet_id = ${id}`,
+          ])
+          .pipe(
+            Effect.catchTag("SqlError", (error) =>
+              getApplet(name).pipe(
+                Effect.flatMap((held) =>
+                  Option.isSome(held) && held.value.owner !== owner
+                    ? Effect.fail(new NameTaken({ name }))
+                    : Effect.die(error),
+                ),
+              ),
+            ),
+          );
 
         return yield* getAppletById(id).pipe(Effect.map(Option.getOrThrow));
       },

@@ -5,7 +5,7 @@
  * applet's prefix.
  */
 import { api, AppletFailed, BadRequest, KvList, NotFound, SqlResult } from "@applets/api";
-import type { Inspection, InspectionResult } from "@applets/api/capabilities";
+import type { Inspection } from "@applets/api/capabilities";
 import { Effect, Schema } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
@@ -33,8 +33,18 @@ export const putBlob = Effect.fn("Storage.putBlob")(function* (
 
 const ok = { ok: true } as const;
 
-/** Runs one inspection in the facet. A version from before `inspect` existed has no such method, and says so. */
-export const inspect = Effect.fn("Storage.inspect")(function* (name: string, call: Inspection) {
+/** A version bundled before `inspect` existed has no such method; only that failure asks for a deploy. */
+const missingInspect = (failed: AppletFailed) =>
+  failed.message.includes("inspect is not a function")
+    ? new AppletFailed({ message: "Deploy this applet again to inspect its storage." })
+    : failed;
+
+/** Runs an inspection and decodes its expected answer. A statement SQLite refuses is an input error. */
+const inspect = Effect.fn("Storage.inspect")(function* <S extends Schema.Top>(
+  name: string,
+  call: Inspection,
+  resultSchema: S,
+) {
   const applet = yield* owned(name);
   const target = targetOf(applet);
 
@@ -42,18 +52,11 @@ export const inspect = Effect.fn("Storage.inspect")(function* (name: string, cal
 
   const supervisors = yield* Supervisors;
 
-  const result = yield* supervisors.inspect(target, call).pipe(
-    Effect.mapError(
-      (failed) =>
-        new AppletFailed({
-          message: `Deploy this applet again to inspect its storage. ${failed.message}`,
-        }),
-    ),
-  );
+  const result = yield* supervisors.inspect(target, call).pipe(Effect.mapError(missingInspect));
 
   if ("error" in result) return yield* new BadRequest({ message: result.error });
 
-  return result;
+  return yield* Schema.decodeUnknownEffect(resultSchema)(result).pipe(Effect.orDie);
 });
 
 /** A blob of the applet's, or null when the key does not exist. */
@@ -98,27 +101,23 @@ export const removeBlob = Effect.fn("Storage.removeBlob")(function* (name: strin
   yield* bucket.delete(`${applet.id}/${key}`);
 });
 
-const decoded = <S extends Schema.Top>(schema: S) =>
-  Effect.flatMap((result: InspectionResult) =>
-    Schema.decodeUnknownEffect(schema)(result).pipe(Effect.orDie),
-  );
-
 /** One statement; a `readonly` one that wrote is rolled back and refused. */
 export const runSql = (name: string, sql: string, readonly: boolean) =>
-  inspect(name, { kind: "sql", sql, readonly }).pipe(decoded(SqlResult));
+  inspect(name, { kind: "sql", sql, readonly }, SqlResult);
 
 /** Every statement in one transaction; the first failure rolls back all of them. */
 export const runSqlBatch = (name: string, statements: ReadonlyArray<string>) =>
-  inspect(name, { kind: "sql-batch", statements }).pipe(
-    decoded(Schema.Struct({ results: Schema.Array(SqlResult) })),
+  inspect(
+    name,
+    { kind: "sql-batch", statements },
+    Schema.Struct({ results: Schema.Array(SqlResult) }),
   );
 
 export const listKv = (name: string, prefix: string) =>
-  inspect(name, { kind: "kv", prefix, limit: 500 }).pipe(decoded(KvList));
+  inspect(name, { kind: "kv", prefix, limit: 500 }, KvList);
 
 export const getKv = (name: string, key: string) =>
-  inspect(name, { kind: "kv-get", key }).pipe(
-    decoded(KvList),
+  inspect(name, { kind: "kv-get", key }, KvList).pipe(
     Effect.flatMap(({ entries }) =>
       entries[0] === undefined
         ? Effect.fail(new NotFound({ message: `no key ${key}` }))
@@ -128,10 +127,10 @@ export const getKv = (name: string, key: string) =>
 
 /** `value` is JSON text, stored as what it parses to. */
 export const putKv = (name: string, key: string, value: string) =>
-  inspect(name, { kind: "kv-put", key, value }).pipe(Effect.as(ok));
+  inspect(name, { kind: "kv-put", key, value }, KvList).pipe(Effect.as(ok));
 
 export const removeKv = (name: string, key: string) =>
-  inspect(name, { kind: "kv-delete", key }).pipe(Effect.as(ok));
+  inspect(name, { kind: "kv-delete", key }, KvList).pipe(Effect.as(ok));
 
 export const storage = HttpApiBuilder.group(api, "storage", (handlers) =>
   handlers.handleAll({

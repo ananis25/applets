@@ -3,7 +3,7 @@ import { Effect, Fiber, Layer, Option } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import { expect, test } from "vite-plus/test";
 
-import { AdminApi } from "./admin.ts";
+import { Api } from "./api.ts";
 import { Auth } from "./auth.ts";
 import { Bucket, Bundler, Editor, Mailer, Supervisors, Vars } from "./bindings.ts";
 import { depthHeader } from "./egress.ts";
@@ -65,7 +65,7 @@ const layers = Layer.mergeAll(
   Layer.mock(Bundler)({}),
   Layer.mock(Bucket)({}),
   Layer.mock(Mailer)({}),
-  Layer.succeed(AdminApi, Effect.die("no admin API in this test")),
+  Layer.succeed(Api, Effect.die("no API in this test")),
 );
 
 /** Runs ingress on one request and waits for what it left for `waitUntil`. */

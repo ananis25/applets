@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useEffectEvent, useRef, useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Button } from "@applets/ui/components/ui/button";
 import {
   Sheet,
@@ -9,17 +8,15 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@applets/ui/components/ui/sheet";
-import type { Files } from "@applets/api";
-import { ask } from "../ask.tsx";
 import { Failure } from "../failure.tsx";
 import { appletQuery, filesQuery } from "../queries.ts";
 import { AppletRail, RailFrame } from "../rail.tsx";
-import { appletLink, isStream, type View } from "../urls.ts";
-import { anyDirty, isDirty, load, matchesSaved, useStore } from "../store.ts";
+import { isStream, type View } from "../urls.ts";
+import { isDirty, useStore } from "../store.ts";
 import { Blobs } from "./blobs.tsx";
 import { Kv } from "./kv.tsx";
-import { useSaveDraft } from "./mutations.ts";
-import { Palette, openPalette } from "./palette.tsx";
+import { useWorkspace } from "./workspace.ts";
+import { Palette } from "./palette.tsx";
 import { Preview } from "./preview.tsx";
 import { Problems } from "./problems.tsx";
 import { Secrets } from "./secrets.tsx";
@@ -34,70 +31,6 @@ import { Versions } from "./versions.tsx";
 /** CodeMirror is most of the editor, so the code pane loads on its own, only once the code page shows. */
 const Code = lazy(() => import("./code.tsx").then((module) => ({ default: module.Code })));
 
-/**
- * Keeps the buffer on the applet and version the URL names. A buffer with unsaved edits is
- * kept, or discarded only once the user agrees; a clean one follows the router's copy.
- */
-function useBuffer(name: string, version: number | null, view: View, files: Files | undefined) {
-  const loaded = useStore((state) => state.applet === name && state.version === version);
-  const navigate = useNavigate();
-  const asking = useRef(false);
-
-  // SYNC: the edit buffer, filled from the router's files.
-  useEffect(() => {
-    if (files === undefined || asking.current) return;
-    const state = useStore.getState();
-
-    if (loaded && (anyDirty(state) || matchesSaved(state, files))) return;
-
-    if (!loaded && state.applet !== null && anyDirty(state)) {
-      const { applet, version: held } = state;
-      asking.current = true;
-
-      void ask({
-        title: `Discard unsaved changes to "${applet}"?`,
-        description: "They are not saved as a draft and cannot be recovered.",
-        action: "Discard",
-        destructive: true,
-      }).then((agreed) => {
-        asking.current = false;
-
-        if (agreed) load(name, version, files);
-        else void navigate({ ...appletLink(applet, view, held), replace: true });
-      });
-
-      return;
-    }
-
-    load(name, version, files);
-  }, [name, version, view, files, loaded, navigate]);
-
-  return loaded;
-}
-
-/** ⌘S saves and ⌘P goes to a file, wherever focus is. */
-function useShortcuts(name: string) {
-  const save = useSaveDraft(name);
-
-  const onKey = useEffectEvent((event: KeyboardEvent) => {
-    if (!(event.metaKey || event.ctrlKey)) return;
-    const key = event.key.toLowerCase();
-
-    if (key !== "s" && key !== "p") return;
-    event.preventDefault();
-
-    if (key === "s") save();
-    else openPalette();
-  });
-
-  // SYNC: the document's keydown listener, registered once; `onKey` always sees the latest `save`.
-  useEffect(() => {
-    document.addEventListener("keydown", onKey, true);
-
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, []);
-}
-
 /** An open applet: top bar, left rail, and the page the URL names. The URL is the source; the buffer follows it. */
 export function Screen({
   name,
@@ -110,8 +43,7 @@ export function Screen({
 }) {
   const applet = useQuery(appletQuery(name));
   const files = useQuery(filesQuery(name, version));
-  const loaded = useBuffer(name, version, view, files.data?.files);
-  useShortcuts(name);
+  const loaded = useWorkspace(name, version, view, files.data?.files);
 
   const error = (applet.data ? null : applet.error) ?? (files.data ? null : files.error);
 

@@ -3,19 +3,32 @@ import { Screen } from "../editor/screen.tsx";
 import { appletQuery } from "../queries.ts";
 import { Failure } from "../failure.tsx";
 import { Shell } from "../shell.tsx";
-import { appletSearch, views } from "../urls.ts";
+import { appletSearch, versioned, views } from "../urls.ts";
 
 /** One page of an open applet. The registry row loads before the page shows; the files load inside it, since they depend on `?version`. */
 export const Route = createFileRoute("/applets/$name/$view")({
   validateSearch: appletSearch,
-  beforeLoad: ({ params }) => {
-    if (!views.some((known) => known === params.view)) {
+  beforeLoad: ({ params, search }) => {
+    const view = views.find((known) => known === params.view);
+
+    if (view === undefined)
       throw redirect({
         to: "/applets/$name/$view",
         params: { name: params.name, view: "code" },
         replace: true,
       });
-    }
+    const version = versioned(view) ? search.version : undefined;
+    const all = view === "logs" || view === "requests" ? search.all : undefined;
+
+    if (version !== search.version || all !== search.all)
+      throw redirect({
+        to: "/applets/$name/$view",
+        params: { name: params.name, view },
+        search: { version, all },
+        replace: true,
+      });
+
+    return { view, version: version ?? null };
   },
   loader: ({ context, params }) => context.queryClient.ensureQueryData(appletQuery(params.name)),
   component: Page,
@@ -37,10 +50,8 @@ function Failed({ error }: ErrorComponentProps) {
 }
 
 function Page() {
-  const { name, view } = Route.useParams();
-  const { version = null } = Route.useSearch();
+  const { name } = Route.useParams();
+  const { view, version } = Route.useRouteContext();
 
-  return (
-    <Screen name={name} view={views.find((known) => known === view) ?? "code"} version={version} />
-  );
+  return <Screen name={name} view={view} version={version} />;
 }

@@ -33,7 +33,7 @@ const applets: Promise<Listing> = fetch("/api/applets")
   .then(async (response) => {
     if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
 
-    // SAFETY: the router's `/api/applets` answers `{ applets }` filtered from the admin API's own listing
+    // SAFETY: the router's `/api/applets` answers `{ applets }` filtered from the API's own listing
     return { ...((await response.json()) as { applets: Array<AppletSummary> }), error: null };
   })
   .catch((error: Error) => ({ applets: [], error: error.message }));

@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { expect, test } from "vite-plus/test";
 
-import { applyEdits } from "./admin.ts";
+import { applyEdits } from "./applets.ts";
 
 const files = { "main.ts": "export const a = 1;\nexport const b = 2;\n" };
 

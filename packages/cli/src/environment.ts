@@ -1,9 +1,11 @@
 /** Where the platform is: host suffix, package paths and the host's secrets. Env vars override the defaults. */
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { Data, Effect, FileSystem } from "effect";
+import { Data, Effect } from "effect";
+import { originFor, readSettings, repoRoot, secretsFile } from "./config.ts";
+
+export { originFor } from "./config.ts";
 
 export class CliError extends Data.TaggedError("CliError")<{
   readonly message: string;
@@ -21,71 +23,32 @@ export const attempt = <Value>(message: string, operation: () => Promise<Value>)
     catch: (cause) => new CliError({ message: `${message}: ${String(cause)}` }),
   });
 
-const repoRoot = path.join(import.meta.dirname, "..", "..", "..");
-
 export const paths = {
   repoRoot,
   routerPackage: path.join(repoRoot, "packages", "router"),
   bundlerPackage: path.join(repoRoot, "packages", "bundler"),
   browserPackage: path.join(repoRoot, "packages", "browser"),
   editorPackage: path.join(repoRoot, "packages", "editor"),
-  secretsFile: path.join(repoRoot, "secrets.env"),
+  secretsFile,
 };
 
-const parseSecrets = (contents: string): Map<string, string> => {
-  const entries = new Map<string, string>();
-
-  for (const line of contents.split("\n")) {
-    const trimmed = line.trim();
-    const separator = trimmed.indexOf("=");
-
-    if (trimmed === "" || trimmed.startsWith("#") || separator === -1) continue;
-
-    entries.set(trimmed.slice(0, separator).trim(), trimmed.slice(separator + 1).trim());
-  }
-
-  return entries;
-};
-
-/**
- * The host suffix from `secrets.env` or the environment, `.localhost` by
- * default. Read synchronously because every URL the scripts print derives from it.
- */
-const hostSuffix = (): string => {
-  if (process.env.APPLET_HOST_SUFFIX !== undefined) return process.env.APPLET_HOST_SUFFIX;
-
-  try {
-    return (
-      parseSecrets(readFileSync(paths.secretsFile, "utf8")).get("APPLET_HOST_SUFFIX") ??
-      ".localhost"
-    );
-  } catch {
-    return ".localhost";
-  }
-};
-
-/** A public origin on the suffix: plain HTTP on the local `wrangler dev` port for `.localhost`, else HTTPS. */
-export const originFor = (host: string, suffix: string): string =>
-  suffix === ".localhost" ? `http://${host}${suffix}:8787` : `https://${host}${suffix}`;
-
-const suffix = hostSuffix();
+const suffix = readSettings().get("APPLET_HOST_SUFFIX") ?? ".localhost";
 
 export const box = {
   hostSuffix: suffix,
-  adminUrl: originFor("admin", suffix),
+  apiUrl: originFor("api", suffix),
 };
 
 export const appletUrl = (name: string) => originFor(name, box.hostSuffix);
 
-const secrets = Effect.gen(function* () {
-  const fs = yield* FileSystem.FileSystem;
-
-  return parseSecrets(yield* fs.readFileString(paths.secretsFile));
-}).pipe(Effect.mapError(failed(`Could not read ${paths.secretsFile}`)));
+const secrets = Effect.try({
+  try: readSettings,
+  catch: (cause) => new CliError({ message: `Could not read ${secretsFile}: ${String(cause)}` }),
+});
 
 /** `key` from the process environment, else from `secrets.env`. Fails naming `key` when neither has it. */
 const required = (found: Map<string, string>, key: string): Effect.Effect<string, CliError> => {
-  const value = process.env[key] ?? found.get(key);
+  const value = found.get(key);
 
   if (value === undefined) {
     return new CliError({

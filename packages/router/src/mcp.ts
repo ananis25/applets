@@ -1,5 +1,5 @@
 /**
- * The MCP server on `MCP_URL`: the admin API's verbs as tools, so an agent in
+ * The MCP server on `MCP_URL`: the API's verbs as tools, so an agent in
  * Claude Code or any MCP client can list, read, deploy and inspect applets as
  * the person who authorized it. Tools are named object_verb, `applet_deploy`,
  * `blobs_put`, so they group by what they act on. Ingress has already turned
@@ -37,12 +37,11 @@ import { Context, Effect, Layer, Schema } from "effect";
 import { McpProtocol, McpServer, Tool, Toolkit } from "effect/unstable/ai";
 import { HttpRouter } from "effect/unstable/http";
 
-import { create, deploy, edit, emails, fork, patch, remove, source } from "./admin.ts";
+import * as applets from "./applets.ts";
 import { Bucket, Bundler, Supervisors, Vars } from "./bindings.ts";
 import { blobDownloadUrl } from "./blobDownload.ts";
 import { Caller, owned } from "./caller.ts";
 import { index, topics } from "./docs.ts";
-import { log } from "./platformLog.ts";
 import { Registry } from "./registry.ts";
 import {
   getBlob,
@@ -56,7 +55,7 @@ import {
   runSql,
   runSqlBatch,
 } from "./storage.ts";
-import { defaultModel, isSecretName, targetOf } from "./types.ts";
+import { defaultModel } from "./types.ts";
 
 /** Ingress's applet host as the caller, so `applet_fetch` is recorded like any request. Ingress provides it, since it owns that path. */
 export class AppletFetch extends Context.Service<
@@ -316,8 +315,6 @@ const handlers = toolkit.toLayer(
     >();
 
     const caller = yield* Caller;
-    const registry = yield* Registry;
-    const supervisors = yield* Supervisors;
     const vars = yield* Vars;
     const fetchApplet = yield* AppletFetch;
 
@@ -361,38 +358,18 @@ const handlers = toolkit.toLayer(
             )
           : Effect.succeed({ text: found.text });
       },
-      applet_list: () =>
-        registry
-          .listApplets(caller.email, caller.role === "admin")
-          .pipe(Effect.map((applets) => ({ applets }))),
-      applet_get: ({ name }) =>
-        provided(
-          Effect.gen(function* () {
-            const applet = yield* owned(name);
-
-            return { applet, versions: yield* registry.listVersions(applet.id) };
-          }),
-        ),
+      applet_list: () => provided(applets.list()),
+      applet_get: ({ name }) => provided(applets.get(name)),
       applet_create: ({ name, template, files }) =>
-        provided(refusedBuild(create(name, template, files))),
+        provided(refusedBuild(applets.create(name, template, files))),
       applet_deploy: ({ name, files, fresh }) =>
-        provided(refusedBuild(deploy(name, files, fresh ?? false))),
+        provided(refusedBuild(applets.deploy(name, files, fresh ?? false))),
       applet_configure: ({ name, new_name, ...change }) =>
-        provided(patch(name, new_name === undefined ? change : { ...change, name: new_name })),
-      applet_fork: ({ name, new_name }) => provided(fork(name, new_name)),
-      applet_run: ({ name }) =>
         provided(
-          Effect.gen(function* () {
-            const target = targetOf(yield* owned(name));
-
-            if (target === undefined)
-              return yield* new NotFound({ message: "applet has no version" });
-
-            yield* supervisors.run(target, "manual");
-
-            return ok;
-          }),
+          applets.patch(name, new_name === undefined ? change : { ...change, name: new_name }),
         ),
+      applet_fork: ({ name, new_name }) => provided(applets.fork(name, new_name)),
+      applet_run: ({ name }) => provided(applets.run(name)),
       applet_fetch: ({ name, path, method, headers, body }) =>
         Effect.gen(function* () {
           const url = `https://${name}${vars.HOST_SUFFIX}${path.startsWith("/") ? path : `/${path}`}`;
@@ -410,12 +387,12 @@ const handlers = toolkit.toLayer(
             body: yield* Effect.promise(() => response.text()),
           };
         }),
-      applet_remove: ({ name }) => provided(remove(name)),
+      applet_remove: ({ name }) => provided(applets.remove(name)),
       templates_list: () => Effect.succeed({ templates: listTemplates() }),
       files_read: ({ name, version, paths }) =>
         provided(
           Effect.gen(function* () {
-            const current = yield* source(name, version);
+            const current = yield* applets.source(name, version);
 
             if (paths === undefined) return current;
 
@@ -430,7 +407,7 @@ const handlers = toolkit.toLayer(
             };
           }),
         ),
-      files_edit: ({ name, edits }) => provided(refusedBuild(edit(name, edits))),
+      files_edit: ({ name, edits }) => provided(refusedBuild(applets.edit(name, edits))),
       sql_read: ({ name, sql }) => provided(runSql(name, sql, true)),
       sql_write: ({ name, statements }) => provided(runSqlBatch(name, statements)),
       kv_list: ({ name, prefix }) => provided(listKv(name, prefix ?? "")),
@@ -478,57 +455,12 @@ const handlers = toolkit.toLayer(
           }),
         ),
       blobs_remove: ({ name, key }) => provided(removeBlob(name, key).pipe(Effect.as(ok))),
-      secrets_list: ({ name }) =>
-        provided(
-          Effect.gen(function* () {
-            const applet = yield* owned(name);
-
-            return { secrets: yield* registry.listSecrets(applet.id) };
-          }),
-        ),
-      secrets_set: ({ name, secret, value }) =>
-        provided(
-          Effect.gen(function* () {
-            const applet = yield* owned(name);
-
-            if (!isSecretName(secret))
-              return yield* new BadRequest({
-                message: "a secret name is capitals, digits and underscores, like API_KEY",
-              });
-
-            yield* registry.putSecret(applet.id, secret, value);
-            yield* log.info("secret set", { applet: name, name: secret });
-
-            return ok;
-          }),
-        ),
-      secrets_remove: ({ name, secret }) =>
-        provided(
-          Effect.gen(function* () {
-            const applet = yield* owned(name);
-            yield* registry.putSecret(applet.id, secret, null);
-            yield* log.info("secret removed", { applet: name, name: secret });
-
-            return ok;
-          }),
-        ),
-      logs_list: ({ name, ...query }) =>
-        provided(
-          Effect.gen(function* () {
-            const applet = yield* owned(name);
-
-            return { logs: yield* registry.listLogs(applet.id, query) };
-          }),
-        ),
-      requests_list: ({ name, ...query }) =>
-        provided(
-          Effect.gen(function* () {
-            const applet = yield* owned(name);
-
-            return { requests: yield* registry.listRequests(applet.id, query) };
-          }),
-        ),
-      emails_list: ({ name, ...query }) => provided(emails(name, query)),
+      secrets_list: ({ name }) => provided(applets.listSecrets(name)),
+      secrets_set: ({ name, secret, value }) => provided(applets.setSecret(name, secret, value)),
+      secrets_remove: ({ name, secret }) => provided(applets.removeSecret(name, secret)),
+      logs_list: ({ name, ...query }) => provided(applets.logs(name, query)),
+      requests_list: ({ name, ...query }) => provided(applets.requests(name, query)),
+      emails_list: ({ name, ...query }) => provided(applets.emails(name, query)),
     };
   }),
 );

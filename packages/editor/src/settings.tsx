@@ -228,8 +228,8 @@ function Agents() {
       <p>
         On first use the agent opens this site to sign you in and ask for consent. Any other MCP
         client that speaks OAuth takes the same URL. The API behind it is documented at{" "}
-        <a className="underline" href={`${siblingUrl("admin")}/docs`}>
-          admin/docs
+        <a className="underline" href={`${siblingUrl("api")}/docs`}>
+          api/docs
         </a>
         , where an API key from the section above is the bearer token.
       </p>

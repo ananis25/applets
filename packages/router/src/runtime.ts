@@ -7,7 +7,7 @@
  */
 import { Effect, Layer, ManagedRuntime, Scheduler } from "effect";
 
-import { AdminApi, layer as adminLayer } from "./admin.ts";
+import { Api, layer as apiLayer } from "./api.ts";
 import { Auth, layer as authLayer } from "./auth.ts";
 import { bindings, Bucket, Bundler, Editor, Mailer, Supervisors, Vars } from "./bindings.ts";
 import { flush } from "./platformLog.ts";
@@ -23,7 +23,7 @@ export type Services =
   | Bucket
   | Mailer
   | Auth
-  | AdminApi;
+  | Api;
 
 /**
  * Fibers resume on microtasks, never on a timer. The default scheduler batches
@@ -36,7 +36,7 @@ const scheduler = Layer.succeed(Scheduler.Scheduler, new Scheduler.MixedSchedule
 
 /** Every service over one request's bindings, with spans and logs to the console. */
 const live = (env: Cloudflare.Env): Layer.Layer<Services> =>
-  adminLayer.pipe(
+  apiLayer.pipe(
     Layer.provideMerge(authLayer(env.REGISTRY)),
     Layer.provideMerge(Layer.mergeAll(registryLayer(env.REGISTRY), bindings(env))),
     Layer.merge(tracing),

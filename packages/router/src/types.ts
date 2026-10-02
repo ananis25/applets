@@ -2,15 +2,6 @@
 import type { Applet, EgressMode, Files, LogLevel, RequestKind } from "@applets/api";
 import type { Json, LoadOptions, ScreenshotOptions } from "@applets/api/capabilities";
 
-/** The hostnames under the suffix the router answers itself, so no applet may take them. */
-export const reservedHosts = ["admin", "app", "auth"];
-
-const appletNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
-/** Whether ingress can serve an applet of this name: one DNS label, not a reserved host. */
-export const isAppletName = (name: string): boolean =>
-  appletNamePattern.test(name) && !reservedHosts.includes(name);
-
 /** The model an `ai` call gets when it names none. */
 export const defaultModel = "~deepseek/deepseek-flash-latest";
 

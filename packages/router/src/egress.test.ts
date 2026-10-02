@@ -1,13 +1,18 @@
 /** An applet's call to another applet, as `Egress` rewrites or refuses it. */
 import { expect, test } from "vite-plus/test";
 
+import { isAppletName, platformHost } from "./hosts.ts";
 import { depthHeader, internalCall, underCap } from "./egress.ts";
 
 const call = (host: string, headers: Record<string, string> = {}) =>
-  internalCall(new Request(`https://${host}.example.test/path`, { headers }), ".example.test");
+  internalCall(
+    new Request(`https://${host}.example.test/path`, { headers }),
+    ".example.test",
+    "https://mcp.example.test/",
+  );
 
 test("the internal request carries no session, so a private target answers 401", () => {
-  const request = call("api", { cookie: "applets.session=abc", authorization: "Bearer token" });
+  const request = call("hello", { cookie: "applets.session=abc", authorization: "Bearer token" });
 
   expect(request).toBeInstanceOf(Request);
   expect(request.headers.get("cookie")).toBeNull();
@@ -15,13 +20,13 @@ test("the internal request carries no session, so a private target answers 401",
 });
 
 test("each hop counts one deeper, and the fifth is refused with a 508", () => {
-  expect(call("api").headers.get(depthHeader)).toBe("1");
-  expect(call("api", { [depthHeader]: "3" }).headers.get(depthHeader)).toBe("4");
-  expect(call("api", { [depthHeader]: "4" })).toMatchObject({ status: 508 });
+  expect(call("hello").headers.get(depthHeader)).toBe("1");
+  expect(call("hello", { [depthHeader]: "3" }).headers.get(depthHeader)).toBe("4");
+  expect(call("hello", { [depthHeader]: "4" })).toMatchObject({ status: 508 });
 });
 
 test("the platform's own hosts are not applets", () => {
-  for (const host of ["admin", "app", "auth"]) {
+  for (const host of ["api", "app", "auth", "home", "mcp"]) {
     expect(call(host)).toMatchObject({ status: 403 });
   }
 });
@@ -57,4 +62,17 @@ test("calls under the cap run concurrently, and the count drops when they finish
 
   expect(peak).toBe(10);
   expect([...first, ...second].map((response) => response.status)).toEqual(Array(20).fill(200));
+});
+
+test("creation and internal calls reserve a configured MCP hostname", () => {
+  const suffix = ".example.test";
+  const mcp = "https://agents.example.test/";
+  expect(platformHost("agents.example.test", suffix, mcp)).toBe("mcp");
+
+  for (const name of ["api", "app", "auth", "home", "mcp", "agents"])
+    expect(isAppletName(name, suffix, mcp)).toBe(false);
+  expect(isAppletName("hello-world", suffix, mcp)).toBe(true);
+  expect(internalCall(new Request("https://agents.example.test/"), suffix, mcp)).toMatchObject({
+    status: 403,
+  });
 });

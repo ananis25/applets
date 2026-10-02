@@ -177,6 +177,27 @@ export function addFile(path: string) {
   openFile(path);
 }
 
+/** The exact draft session and files submitted by a save or deploy. */
+export type DraftSnapshot = { applet: string; generation: number; files: Files };
+
+/** Captures the current editable draft, or nothing while another buffer is open. */
+export function draftSnapshot(applet: string): DraftSnapshot | undefined {
+  const state = getState();
+
+  if (state.applet !== applet || state.version !== null) return undefined;
+
+  return { applet, generation: state.generation, files: Object.fromEntries(state.files) };
+}
+
+/** Whether a response still belongs to this editing session. */
+export function isCurrentDraft(draft: DraftSnapshot): boolean {
+  const state = getState();
+
+  return (
+    state.applet === draft.applet && state.version === null && state.generation === draft.generation
+  );
+}
+
 /** After a save or deploy the router has `files`; edits made while it ran stay dirty. */
 export function markSaved(files: Files) {
   setState({ saved: new Map(Object.entries(files)) });

@@ -24,7 +24,8 @@ export const isStream = (view: View): view is StreamView =>
   view === "logs" || view === "requests" || view === "emails";
 
 /** The pages a version means something on: its code, its streams, and the list it sits in. Storage and settings are the applet's, not a version's. */
-export const versioned = (view: View) => view === "code" || view === "versions" || isStream(view);
+export const versioned = (view: View) =>
+  view === "code" || view === "versions" || view === "logs" || view === "requests";
 
 /** An applet page's search: `version` views that version read only, `all` widens a stream to every version. A bad value drops rather than failing the page. */
 export const appletSearch = z.object({
@@ -53,8 +54,8 @@ export const appletLink = (name: string, view: View = "code", version: number | 
     search: version === null || !versioned(view) ? {} : { version },
   });
 
-/** A sibling host of this page's: the page is on `app.`, sign-in on `auth.`, the MCP server on `mcp.`. */
-export const siblingUrl = (host: "auth" | "mcp" | "admin") =>
+/** A sibling host of this page's: the page is on `app.`, sign-in on `auth.`, the MCP server on `mcp.`, the API on `api.`. */
+export const siblingUrl = (host: "auth" | "mcp" | "api") =>
   location.origin.replace("//app.", `//${host}.`);
 
 export function liveUrl(name: string): string {

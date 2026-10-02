@@ -4,7 +4,7 @@
 
 Use when connecting an agent or a script to the platform.
 
-The admin API is an OpenAPI document at `https://admin<suffix>/openapi.json`, with a reference page at `https://admin<suffix>/docs`. A script calls it with an API key from the editor's Settings page as the bearer token, and `vp run push` is one such script.
+The API is an OpenAPI document at `https://api<suffix>/openapi.json`, with a reference page at `https://api<suffix>/docs`. A script calls it with an API key from the editor's Settings page as the bearer token, and `vp run push` is one such script.
 
 The MCP server at `https://mcp<suffix>/` exposes applet creation, code, settings, storage, and activity operations as tools named by what they act on. Platform administration and editor drafts stay on the API:
 
@@ -63,7 +63,7 @@ Identity is a magic link: the sign-in page takes an email, an allowed address ge
 
 A user makes a key on the editor's Settings page and sees it once. A request with `Authorization: Bearer <key>` acts as its creator:
 
-- on `admin<suffix>` a key does what its creator could do in the editor, which is what a script uses
+- on `api<suffix>` a key does what its creator could do in the editor, which is what a script uses
 - on an applet's hostname a key lets a script reach its creator's `private` applets and everyone's `family` ones
 - on a `public` applet every caller is anonymous, key or not: the applet gets no identity header
 

@@ -12,7 +12,7 @@ import { appletQuery, filesQuery } from "../queries.ts";
 import { appletLink, liveUrl } from "../urls.ts";
 import { closeEditor, renameBuffer, useStore } from "../store.ts";
 import { download } from "./download.ts";
-import { useDeploy, useDeploying, usePatchApplet } from "./mutations.ts";
+import { useDeploy, useWorking, usePatchApplet } from "./workspace.ts";
 import { zip } from "./zip.ts";
 
 const audiences: Record<Visibility, string> = {
@@ -71,7 +71,7 @@ export function Settings({ name }: { name: string }) {
   const hasDraft = useQuery(filesQuery(name, null)).data?.hasDraft ?? false;
   const patch = usePatchApplet(name);
   const deploy = useDeploy(name);
-  const deploying = useDeploying(name);
+  const working = useWorking(name);
   const viewing = useStore((state) => state.version !== null);
   const [error, setError] = useState<string>();
   const url = liveUrl(name);
@@ -121,7 +121,7 @@ export function Settings({ name }: { name: string }) {
       action: "Deploy",
     });
 
-    if (agreed) deploy.mutate(true);
+    if (agreed) deploy.deploy(true);
   };
 
   const discardDraft = async () => {
@@ -326,7 +326,7 @@ export function Settings({ name }: { name: string }) {
             <Button
               variant="outline"
               size="xs"
-              disabled={deploying || viewing}
+              disabled={working || viewing}
               onClick={() => void reResolve()}
             >
               re-resolve
@@ -355,7 +355,12 @@ export function Settings({ name }: { name: string }) {
         <dd className="flex items-center gap-2 font-mono text-xs">
           {hasDraft ? "saved on the router" : "none"}
           {hasDraft && (
-            <Button variant="outline" size="xs" onClick={() => void discardDraft()}>
+            <Button
+              variant="outline"
+              size="xs"
+              disabled={working}
+              onClick={() => void discardDraft()}
+            >
               discard
             </Button>
           )}

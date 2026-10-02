@@ -1,4 +1,4 @@
-/** Who is calling the admin API, and the applet a route is about once the policy has said yes. */
+/** Who is calling the API, and the applet a route is about once the policy has said yes. */
 import { Forbidden, NotFound } from "@applets/api";
 import { Context, Effect, Option } from "effect";
 

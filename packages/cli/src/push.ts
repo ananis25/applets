@@ -1,4 +1,4 @@
-/** `vp run push <path>`: upload an applet directory to the admin API, which bundles and serves it. */
+/** `vp run push <path>`: upload an applet directory to the API, which bundles and serves it. */
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
@@ -45,12 +45,12 @@ const readAppletFiles = (directory: string) =>
     return files;
   });
 
-/** The admin API's client, every call with the bearer token from `secrets.env`. */
+/** The API's client, every call with the bearer token from `secrets.env`. */
 const admin = Effect.gen(function* () {
   const token = yield* adminToken;
 
   return yield* HttpApiClient.make(api, {
-    baseUrl: box.adminUrl,
+    baseUrl: box.apiUrl,
     transformClient: HttpClient.mapRequest(HttpClientRequest.bearerToken(token)),
   });
 }).pipe(Effect.provide(FetchHttpClient.layer));
@@ -59,7 +59,7 @@ const admin = Effect.gen(function* () {
 const failed = (error: { readonly _tag: string; readonly message: string }): CliError => {
   if (error._tag === "HttpClientError")
     return new CliError({
-      message: `Could not reach the admin API at ${box.adminUrl}: ${error.message}`,
+      message: `Could not reach the API at ${box.apiUrl}: ${error.message}`,
     });
 
   return new CliError({ message: `${error._tag}: ${error.message}` });

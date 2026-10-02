@@ -34,7 +34,7 @@ Terms used throughout:
 - a facet is a Durable Object running inside another one, with its own SQLite, from a class the parent loaded
 - a script, or worker, is one Wrangler project, deployed with `wrangler deploy`
 
-The router is the whole front door. One route, `*<suffix>/*`, sends every hostname one level under the suffix to it, and it routes by hostname from there. The apex is not matched. Every host under the suffix is public and the router gates what needs gating: a user for `private` and `family` applets, for the editor on `app.<suffix>` and for the launcher on `home.<suffix>`, a bearer key on `admin.<suffix>`, an OAuth access token on `mcp.<suffix>`. The bundler, the browser and the editor have no route; they exist only because the router's `services` name them, which is why the router deploys last.
+The router is the whole front door. One route, `*<suffix>/*`, sends every hostname one level under the suffix to it, and it routes by hostname from there. The apex is not matched. `hosts.ts` classifies platform hosts and validates applet names for creation, ingress and internal calls. The reserved names are `api`, `app`, `auth`, `home` and `mcp`, plus any applet label used by the configured MCP origin. Every host under the suffix is public and the router gates what needs gating: a user for `private` and `family` applets, for the editor on `app.<suffix>` and for the launcher on `home.<suffix>`, a bearer key on `api.<suffix>`, an OAuth access token on `mcp.<suffix>`. The bundler, the browser and the editor have no route; they exist only because the router's `services` name them, which is why the router deploys last.
 
 The suffix is host-specific and never committed. It lives in `secrets.env`, and `vp run deploy` derives the route and the zone name from it.
 
@@ -46,13 +46,13 @@ The editor script has a `main` that forwards to its assets binding, because an a
 
 The router, `packages/router`. Bindings: `LOADER` the Worker Loader, `REGISTRY` D1, `APPLET_BLOBS` R2, `SUPERVISOR` a Durable Object, `BUNDLER` and `EDITOR` service bindings, and a cron every 10 minutes. It exports:
 
-- the default handler: ingress by hostname, Better Auth's routes, the admin API and its OpenAPI document, the MCP server, the `email` handler for received mail, and the cron that vacuums logs, requests, emails and attachments
+- the default handler: ingress by hostname, Better Auth's routes, the API and its OpenAPI document, the MCP server, the `email` handler for received mail, and the cron that vacuums logs, requests, emails and attachments
 - `Supervisor`, the one Durable Object class declared anywhere, one instance per applet, addressed by applet id
 - five `WorkerEntrypoint` classes that are capabilities, not routes: `Logs`, `Blobs`, `Email`, `AI` and `Egress`. The loader stamps each with the applet's name and version and puts it in the loaded applet's `env`
 
 The bundler, `packages/bundler`. One binding, `DEPS`, the R2 cache of installed `node_modules` trees. It exports the `Bundler` entrypoint the router calls as `env.BUNDLER.build(files)`. It has no routes.
 
-The browser, `packages/browser`. One binding, `BROWSER`, Cloudflare's Browser Run. It exports the `Browser` entrypoint the router calls as `env.BROWSER.evaluate(url, script)` and `env.BROWSER.screenshot(url)`. It has no routes.
+The browser, `packages/browser`. One binding, `BROWSER`, Cloudflare's Browser Run. It exports the `Browser` entrypoint the router calls as `env.BROWSER.open(url)`, `goto(session, url)`, `evaluate(session, script)`, `screenshot(session)` and `close(session)`. It has no routes.
 
 The editor, `packages/editor`. Static assets plus a `worker.ts` that forwards to `ASSETS`. Two pages: the editor at `/`, and the sign-in page at `/auth`, which the router serves on `auth.<suffix>` as `/`, `/confirm` and the OAuth `/consent`. The sign-in page is a top-level `auth.html`, not a nested `auth/index.html`: the assets binding would redirect `/auth` to `/auth/`, the router rewrites every sign-in path back to `/auth`, and the two would loop. The router sends `app.<suffix>` to it and answers `/api/` itself. It has no bindings.
 
@@ -92,9 +92,9 @@ The supervisor owns an applet's schedule: setting the expression stores it in th
 ### The request paths
 
 1. `<applet>.<suffix>`: router ingress, registry lookup by hostname and policy check, `SUPERVISOR.getByName(id)`, facet, the applet's `fetch`. An outbound `fetch()` from the applet comes back through the router's `Egress` entrypoint, or is refused when egress is `none`. A `fetch()` to another applet's hostname is dispatched inside the router, see "Applets calling applets".
-2. `app.<suffix>`: the router needs a signed-in user, then `/api/` is answered by the admin API as that user and everything else is forwarded to the editor's assets.
-3. `admin.<suffix>`: router, bearer key, admin API as the key's creator. `vp run push` and the Vite page use this with `ADMIN_TOKEN`.
-4. `PUT /applets/:name/versions`: router, `BUNDLER.build`, a new version row, a poke to the supervisor.
+2. `app.<suffix>`: the router needs a signed-in user, then `/api/` is answered by the API as that user and everything else is forwarded to the editor's assets.
+3. `api.<suffix>`: router, bearer key, the API as the key's creator. `vp run push` and the Vite page use this with `ADMIN_TOKEN`.
+4. `PUT /applets/:name/versions`: router, `BUNDLER.build`, an atomic publication of the new version. The supervisor loads it on the next request.
 5. `auth.<suffix>`: router, Better Auth, which is also the OAuth authorization server under `/api/auth/oauth2/` and `/.well-known/`.
 6. `mcp.<suffix>`: router, OAuth access token, the MCP server's tools over the admin services as the token's user. `GET /.well-known/oauth-protected-resource` says where the token comes from.
 7. Mail to `<applet>@<domain>`: Email Routing, the router's `email` handler, registry lookup by the local part, `SUPERVISOR.getByName(id)`, the applet's `inbox` export.
@@ -125,7 +125,7 @@ Compute:
 
 Storage:
 
-- D1 database `applets-registry`, binding `REGISTRY`, deploy: created when missing, and its id spliced into `wrangler.local.jsonc`; the schema is created by the router on first use, no migrations
+- D1 database `applets-registry`, binding `REGISTRY`, deploy: created when missing, and its id spliced into `wrangler.local.jsonc`; the CLI applies pending migrations before starting or deploying the router
 - R2 bucket `applets-blobs`, binding `APPLET_BLOBS` on the router, deploy: applet blobs and received attachments
 - R2 bucket `applets-deps`, binding `DEPS` on the bundler, deploy: the npm package cache
 
@@ -142,11 +142,11 @@ Secrets, all on the router, deploy, from the host-only `secrets.env` through `wr
 - from the file: `BETTER_AUTH_SECRET`, `EMAIL_FROM`, `OWNER_EMAIL`, `OPENROUTER_API_KEY`
 - derived: `ADMIN_TOKEN_HASH` from `ADMIN_TOKEN`, `HOST_SUFFIX` and `AUTH_URL` from `APPLET_HOST_SUFFIX`
 
-After the platform, `vp run ship` pushes two example applets through the admin API as the check that the platform answers. `vp run destroy --yes` deletes every deploy row under Compute and Storage, the router first, and leaves the zone's rows alone.
+After the platform, `vp run ship` pushes two example applets through the API as the check that the platform answers. `vp run destroy --yes` deletes every deploy row under Compute and Storage, the router first, and leaves the zone's rows alone.
 
 ## The build
 
-A deploy is a `PUT` of the applet's files to `/applets/<name>/versions` on the admin API. The editor's Deploy button sends it, and `vp run push <path>` sends the same thing for a directory, named after the directory. The router calls `env.BUNDLER.build(files)`, which does, in order:
+A deploy is a `PUT` of the applet's files to `/applets/<name>/versions` on the API. The editor's Deploy button sends it, and `vp run push <path>` sends the same thing for a directory, named after the directory. The router calls `env.BUNDLER.build(files)`, which does, in order:
 
 1. Scan `main.ts` for its exports, every file for `npm:` specifiers, and check the `client/` rules.
 2. Rewrite `npm:zod@3` to `zod` and `@std` to the bundled copy of the library.
@@ -156,7 +156,7 @@ A deploy is a `PUT` of the applet's files to `/applets/<name>/versions` on the a
 
 The scan in step 1 reads static imports with `es-module-lexer`, falling back to a line-anchored pattern for JSX and TSX, as the Cloudflare worker bundler does, which is why a dynamic `import()` of an `npm:` specifier is unresolved. Text files, `.html`, `.css`, `.svg`, `.md` and `.txt`, load as strings. The installer in step 3 is `@cloudflare/worker-bundler`'s: a flat `node_modules`, no peer dependencies, no `.wasm` or `.node` files, and there is no lockfile, so the installed versions are recorded on the version row. Installed sets are cached: the bundler stores the `node_modules` tree it built in R2 `applets-deps` under a hash of the sorted dependency map, and a later deploy with the same set restores the tree and never calls the registry. So a loose range like `npm:zod@3` stays pinned only while the applet's dependency set is unchanged, and adding or removing a dependency resolves every loose range again. A rollback is not affected, since a version row holds the built bundle. A deploy with `?fresh`, 're-resolve' in the applet's settings, skips the cached set, installs from npm and replaces the object, so every applet with the same set gets the new tree on its next deploy.
 
-The router stores the result as the applet's next version, numbered from 1, makes it current, and pokes the supervisor so the next request swaps. A failed build returns the errors and changes nothing: the version that was live stays live. D1 caps a row at 2 MB, so a source file is one `file_contents` row and the bundle is split into `bundle_parts` rows of at most 1.9 MB, each under the SHA-256 of its text; the version row lists the hashes, and it and any new text are written in one transaction. A source file past 1,900,000 bytes fails the same way, with a message that gives the size. A bundle costs 20 to 500 ms plus a one-time 200 ms wasm start per isolate.
+The router stores the result as the applet's next version, numbered from 1, makes it current, and clears the draft in the same transaction. The supervisor notices the change on the next request and swaps the facet. A failed build returns the errors and changes nothing: the version that was live stays live. D1 caps a row at 2 MB, so a source file is one `file_contents` row and the bundle is split into `bundle_parts` rows of at most 1.9 MB, each under the SHA-256 of its text; the version row lists the hashes, and the applet row, version and any new text are written in one transaction. A source file past 1,900,000 bytes fails the same way, with a message that gives the size. A bundle costs 20 to 500 ms plus a one-time 200 ms wasm start per isolate.
 
 [Cloudflare allows](https://developers.cloudflare.com/workers/platform/limits/#worker-size) a platform Worker bundle up to 64 MiB uncompressed on both Free and Paid plans, with no compressed-size limit. This applies to the platform workers, not the 1,900,000-byte applet version-row check above.
 
@@ -178,7 +178,7 @@ export class App extends DurableObject {
 }
 ```
 
-The `/main.js` branch is only generated when the applet has a `client/` directory. `handle` runs the handler with the run's id in an `AsyncLocalStorage`, which is how `log` knows the request it is writing for; see "Logs". `inspect` is an RPC method only the supervisor can reach, since nothing else holds the facet's stub. It is how the editor's SQLite and KV pages read the applet's storage: `@std` runs one statement, or lists or deletes `kv` keys, and a statement SQLite refuses comes back as `{ error }` rather than a throw. A version bundled before `inspect` existed has no such method, and the router answers 409 asking for a deploy.
+The `/main.js` branch is only generated when the applet has a `client/` directory. `handle` runs the handler with the run's id in an `AsyncLocalStorage`, which is how `log` knows the request it is writing for; see "Logs". `inspect` is an RPC method only the supervisor can reach, since nothing else holds the facet's stub. It is how the editor's SQLite and KV pages read the applet's storage: `@std` runs one statement, or lists or deletes `kv` keys, and a statement SQLite refuses comes back as `{ error }` rather than a throw. A version bundled before `inspect` existed has no such method, and the router answers 502 asking for a deploy; any other failure keeps its own message.
 
 ## The router
 
@@ -199,7 +199,7 @@ The loaded worker's `env` holds `APPLET_NAME`, `APPLET_VERSION` and the `LOGS`, 
 Every hostname is public on the internet and gated by the router:
 
 - an applet answers a stranger only when its visibility is `public`; every other applet, the editor and its `/api/` routes need a user, from a session or a bearer key
-- `admin.<suffix>` takes a bearer key and never a cookie, so a page on a sibling host cannot call it as its visitor
+- `api.<suffix>` takes a bearer key and never a cookie, so a page on a sibling host cannot call it as its visitor
 - the API under `app.<suffix>/api/` refuses a request whose `Origin` is another host, for the same reason: the session cookie covers every applet host, so an applet's page could otherwise call it as whoever is visiting
 - a private or family applet refuses cross-origin writes that carry the shared session cookie. Its own page and scripts using a bearer key can still write to it. Applets should keep GET and HEAD free of side effects
 - `auth.<suffix>` is open, because it is how a session starts, and rate-limited by Better Auth
@@ -210,9 +210,9 @@ Hostnames:
 | Hostname | Serves |
 | --- | --- |
 | `<applet>.<suffix>` | the applet's current version |
-| `admin.<suffix>` | the admin API, bearer key only |
+| `api.<suffix>` | the API, bearer key only |
 | `auth.<suffix>` | the sign-in pages from the editor script, and Better Auth's own routes under `/api/auth/` |
-| `app.<suffix>` | the editor page, with the admin API under `/api/`, behind a session |
+| `app.<suffix>` | the editor page, with the API under `/api/`, behind a session |
 | `home.<suffix>` | the launcher: an installable page listing the applets the signed-in person may open, each shown in a frame |
 
 ### Applets calling applets
@@ -222,7 +222,7 @@ On Cloudflare a worker's `fetch()` to a host on its own zone skips Workers and g
 - a request whose hostname ends with the suffix goes to the router's own ingress as a function call. The policy check, the version stamp and the `requests` row happen as they do for a request from outside
 - any other host goes to `fetch(request)`
 - the internal request has its `cookie` and `authorization` headers stripped. It carries no session and no key, so the caller is a stranger: only `public` applets answer, and any other target answers 401
-- the reserved hosts `admin`, `app` and `auth` answer 403
+- the reserved hosts `api`, `app`, `auth`, `home` and `mcp` answer 403
 - at most 16 internal calls may be in flight per router isolate; the next one answers 508. A loop nests, so it reaches the cap in 16 hops and fails. The cap is a counter, not a queue: calls under it run concurrently
 - an `x-applet-depth` header counts hops for applets that forward incoming headers, and the fifth hop answers 508. Ingress deletes the header on requests from outside
 
@@ -254,15 +254,17 @@ Every per-applet table keys on `applet_id`, never on the name; a row returned by
 
 `POST /applets/:name/fork` makes a new applet of the caller's from the current version: a fresh id, the version's file and bundle hashes and the contents they name copied into the new applet's rows, the same exports and dependencies as its version 1, with every file marked added. No storage, secrets, drafts, logs or triggers come along, and the fork is `private`. `platform_logs.applet` is the one column that holds a name, since it labels a log line rather than keying a row.
 
-Versions are numbered from 1 per applet. A rollback makes an older version current; the applet's settings, its schedule and email switch among them, stay as they are. An applet name is lowercase letters and digits joined by single dashes, never a platform host; the admin API refuses anything else, on a deploy, a rename and a fork alike. `vp run push` and the Vite page reach the registry only through the admin API with the host-only `ADMIN_TOKEN`; the router stores its SHA-256 hash, and the token acts as the admin.
+Versions are numbered from 1 per applet. A rollback makes an older version current; the applet's settings, its schedule and email switch among them, stay as they are. An applet name is lowercase letters and digits joined by single dashes, never a platform host; the API refuses anything else, on a deploy, a rename and a fork alike. `vp run push` and the Vite page reach the registry only through the API with the host-only `ADMIN_TOKEN`; the router stores its SHA-256 hash, and the token acts as the admin.
 
 The routes are the `HttpApi` in `packages/api`: every path, parameter, body, answer and error as a Schema, one group per area (`applets`, `versions`, `storage`, `secrets`, `runs`, `keys`, `users`, `sessions`, `platform`). The router implements it with `HttpApiBuilder`, the editor and `vp run push` call it through the client `HttpApiClient` derives, and a refusal is a tagged error with its own status: `BadRequest` 400, `Unauthorized` 401, `Forbidden` 403, `NotFound` 404, `BuildFailed` 422 with one line per problem, `AppletFailed` 502. Who may call which is under "Access" in [platform.md](platform.md#access). On the editor host only, the `sessions` group lists and revokes the caller's own browser sessions through Better Auth, so a session token never leaves the router; a revoked browser is signed out once its five-minute cookie cache runs out.
 
-The same `HttpApi` is the OpenAPI document Effect generates from it, served on `admin.<suffix>` as `/openapi.json` with a Scalar page at `/docs`, both without a key. The document is the contract as the router runs it, so there is nothing to keep in sync.
+Every route under `/platform/` needs the admin role: the user list, platform info and logs, and unclaimed mail. Every other route is about what the caller owns. The admin user's settings page is on `app.<suffix>/settings/`; `api.<suffix>` hosts the same API for bearer keys, and answers a browser without one with a 401 rather than the sign-in redirect.
+
+The same `HttpApi` is the OpenAPI document Effect generates from it, served on `api.<suffix>` as `/openapi.json` with a Scalar page at `/docs`, both without a key. The document is the contract as the router runs it, so there is nothing to keep in sync.
 
 ### The MCP server
 
-`packages/router/src/mcp.ts` is an Effect `Toolkit` of tools over the same services the admin API's handlers use, `deploy` and `patch` among them, served by Effect's `McpServer` on `MCP_URL`, which is `https://mcp<suffix>/`. The tools are named object_verb, `applet_deploy`, `files_edit`, `blobs_put` and so on, so they group by what they act on. The server's instructions are a short orientation that sends the agent to `help`, which serves `applets.md` and `platform.md` from `packages/router/src/docs.ts`: whole, or one `##` section at a time as a topic named by its heading, each section's first line saying when to read it. So an agent reads what a person reads, and there is no second copy to go stale. `applet_fetch` calls the applet through ingress's applet host as the caller, so the run is recorded like any other; ingress provides that path to the server as `AppletFetch`, since the server cannot import ingress. `applet_create` takes a `template`, one of the directories under `examples/`, which `vp run templates` embeds into `packages/api` as JSON so the router and the editor offer the same list; a test in `packages/cli` fails when the JSON is behind the directories. Ingress turns the bearer token into the `Caller` and builds the server for that one request; a tool's refusal is the same tagged error the API answers with, shown to the agent as the result's text. Only the stateless protocol revision, `2026-07-28`, is offered: nothing outlives a request on Workers, so a session id would have nowhere to live, and the `subscriptions/listen` stream is refused with method-not-found, which a client takes as no notifications.
+`packages/router/src/mcp.ts` is an Effect `Toolkit` of tools over the applet operations in `packages/router/src/applets.ts`, which the HTTP handlers also call, served by Effect's `McpServer` on `MCP_URL`, which is `https://mcp<suffix>/`. The tools are named object_verb, `applet_deploy`, `files_edit`, `blobs_put` and so on, so they group by what they act on. The server's instructions are a short orientation that sends the agent to `help`, which serves `applets.md` and `platform.md` from `packages/router/src/docs.ts`: whole, or one `##` section at a time as a topic named by its heading, each section's first line saying when to read it. So an agent reads what a person reads, and there is no second copy to go stale. `applet_fetch` calls the applet through ingress's applet host as the caller, so the run is recorded like any other; ingress provides that path to the server as `AppletFetch`, since the server cannot import ingress. `applet_create` takes a `template`, one of the directories under `examples/`, which `vp run templates` embeds into `packages/api` as JSON so the router and the editor offer the same list; a test in `packages/cli` fails when the JSON is behind the directories. Ingress turns the bearer token into the `Caller` and builds the server for that one request; a tool's refusal is the same tagged error the API answers with, shown to the agent as the result's text. Only the stateless protocol revision, `2026-07-28`, is offered: nothing outlives a request on Workers, so a session id would have nowhere to live, and the `subscriptions/listen` stream is refused with method-not-found, which a client takes as no notifications.
 
 ## Identity and access
 
@@ -283,7 +285,7 @@ An MCP client has no place to paste a key, so the router is an OAuth 2.1 authori
 3. it opens `/api/auth/oauth2/authorize` in the browser. Without a session, Better Auth sends the person to the sign-in page with the signed authorization query, and the magic link's callback returns them to the authorize route; with one, to `/consent`, where one button posts the grant and the browser lands on the client's redirect URI with the code
 4. the client exchanges the code with PKCE at `/api/auth/oauth2/token` for an access token bound to `MCP_URL`, a JWT whose subject is the Better Auth user id, valid for an hour, and a refresh token valid for a year that is rotated at each use with a fresh year, so a person signs in again only after a year away. The scopes are `applets` and `offline_access`; the resource metadata on the MCP host is written by ingress rather than the provider, because the provider leaves `offline_access` out of it and a client asks only for what is advertised, and the registration hook grants the refresh token grant to a client that does not ask for it
 
-The router checks a presented token in-process, `verifyJWT` against the keys in the registry with the issuer and the audience the `jwt` plugin was given, since a worker's `fetch()` to its own zone never reaches the router. The token's subject becomes an email through the `user` table, and from there the same `memberFor` as a session, so removing a user revokes their agents at once. A token is accepted on the MCP host and on `admin.<suffix>` alike.
+The router checks a presented token in-process, `verifyJWT` against the keys in the registry with the issuer and the audience the `jwt` plugin was given, since a worker's `fetch()` to its own zone never reaches the router. The token's subject becomes an email through the `user` table, and from there the same `memberFor` as a session, so removing a user revokes their agents at once. A token is accepted on the MCP host and on `api.<suffix>` alike.
 
 ## Email
 
@@ -315,7 +317,7 @@ There is no Puppeteer API reaching the applet: the page's own JavaScript is the 
 
 A `requests` row is written when the response has ended, not when its headers went out: an applet that streams has sent its 200 long before its handler can fail, so ingress forwards the body chunk by chunk and records the status, the full duration and, when the body ended early, the reason.
 
-The platform keeps a log of its own, `platform_logs`, in the same window. Every `Effect.log` line at info or above in the router is queued by a logger and written in one batch after the response, under `waitUntil`; a line's annotations are its data, `applet` is a column of its own, and a failed cause is added as text. What is written: a deploy with its duration, package count and whether the dependency set was cached, a failed build with its errors, a rollback, a settings or secret change, an applet removed, a sign-in link sent or refused, users and keys added or removed, a worker loaded and a facet restarted with the load time, a schedule run that failed, mail unclaimed, delivery and send failures, an editor asset the editor script had no file for, an admin API call that answered 5xx and an ingress crash. Every line from an admin API call carries `by`, the caller. The admin reads it on the Logs page's platform view; `GET /platform/logs` is the endpoint. The console line still goes to Workers Logs.
+The platform keeps a log of its own, `platform_logs`, in the same window. Every `Effect.log` line at info or above in the router is queued by a logger and written in one batch after the response, under `waitUntil`; a line's annotations are its data, `applet` is a column of its own, and a failed cause is added as text. What is written: a deploy with its duration, package count and whether the dependency set was cached, a failed build with its errors, a rollback, a settings or secret change, an applet removed, a sign-in link sent or refused, users and keys added or removed, a worker loaded and a facet restarted with the load time, a schedule run that failed, mail unclaimed, delivery and send failures, an editor asset the editor script had no file for, an API call that answered 5xx and an ingress crash. Every line from an API call carries `by`, the caller. The admin reads it on the Logs page's platform view; `GET /platform/logs` is the endpoint. The console line still goes to Workers Logs.
 
 There is no separate development log. Every deploy is a real version on the live applet, so "the logs from what I just deployed" is the version filter, which is the editor's default view.
 
@@ -325,7 +327,7 @@ Platform secrets are Worker secrets on the router. `vp run deploy` reads them fr
 
 `secrets.env.example` lists what the file holds. One entry is host-specific, not secret:
 
-- `APPLET_HOST_SUFFIX`: with it set the scripts talk to `https://admin<suffix>` and the router's `AUTH_URL` becomes `https://auth<suffix>`; without it everything is `.localhost` on port 8787. A platform deploy refuses the `.localhost` suffix
+- `APPLET_HOST_SUFFIX`: with it set the scripts talk to `https://api<suffix>` and the router's `AUTH_URL` becomes `https://auth<suffix>`; without it everything is `.localhost` on port 8787. A platform deploy refuses the `.localhost` suffix
 
 `wrangler` takes the account from its own login, so no account id is stored. The few Cloudflare API calls the scripts make themselves, in `packages/cli/src/cloudflare.ts`, run with the token `wrangler auth token` prints. That login has no DNS scope, so the one thing a deploy cannot create is the wildcard DNS record the route attaches to: a proxied `AAAA` record, name `*`, value `100::`, added once in the Cloudflare dashboard.
 
@@ -337,21 +339,21 @@ An applet's own secrets are rows in the registry's `secrets` table, in plain tex
 
 ## The editor
 
-`packages/editor` is the third platform script: a Vite React page on the design system, served on `app.<suffix>`. The router forwards that host to the editor script over a service binding and answers `/api/` on it with the admin API, so the page never holds a token and never crosses an origin. What it does: show the user's recently changed applets on Home, list and search applets, open one from `GET /applets/:name/source`, edit and add files, save unsaved work as a draft on the router, deploy, browse the version history with the files each one changed, view or roll back to an older version after a confirmation, create a new applet, which deploys a template as its version 1, remove one, manage the user's API keys and, for the admin, manage who may sign in.
+`packages/editor` is the fourth platform script: a Vite React page on the design system, served on `app.<suffix>`. The router forwards that host to the editor script over a service binding and answers `/api/` on it with the API, so the page never holds a token and never crosses an origin. What it does: show the user's recently changed applets on Home, list and search applets, open one from `GET /applets/:name/source`, edit and add files, save unsaved work as a draft on the router, deploy, browse the version history with the files each one changed, view or roll back to an older version after a confirmation, create a new applet, which deploys a template as its version 1, remove one, manage the user's API keys and, for the admin, manage who may sign in.
 
 The URL picks the page, through [wouter](https://github.com/molefrog/wouter): `/`, `/applets`, `/logs` and `/settings` sit in a shell with a global rail, and `/applets/:name/:view` is an open applet, so every page has a link and the back button works. The editor script answers a path that is no file with `index.html`, except under `/assets/`, which is a 404: a deploy replaces every chunk, and a page open across one would otherwise get the page as JavaScript and go blank. The page listens for Vite's `preloadError` and reloads for the current build instead, and the router logs the miss. The store follows the URL and keeps the open applet loaded while the user visits other pages, so unsaved edits survive until another applet is opened or the tab closes, and both of those ask first.
 
 The editor pane is [CodeMirror 6](https://codemirror.net) with its basic setup and a language pack per kind of applet file, and the file tree is [Pierre's](https://github.com/pierrecomputer/pierre) `@pierre/trees`, with keyboard navigation and a context menu. There is no language service, so type errors show up after Deploy in the Problems panel, not while typing. The editor has undo, multiple cursors, search and replace, bracket matching, auto-indent and auto-closing brackets.
 
-One zustand store holds every piece of state and every action; components read slices and call actions. File text lives in the store as strings, the editor pane reports each edit back, and a file is dirty when its text differs from the saved copy. `vp run deploy` runs `vp build` here and deploys `dist/`. The editor host needs a user, so a browser without a session is redirected to sign-in and a script without a session or a key gets 401.
+The URL owns navigation and version selection. TanStack Query owns server data. The zustand store owns the editing buffer and code-page UI. `editor/workspace.ts` coordinates opening a buffer, confirming discarded edits, keyboard actions, saving and deploying. Each save or deploy captures the buffer generation and files. A late response updates the buffer only if that editing session is still open; edits made during a save remain dirty. Saves and deploys cannot overlap for the same applet. File text lives in the store as strings, the editor pane reports each edit back, and a file is dirty when its text differs from the saved copy. `vp run deploy` runs `vp build` here and deploys `dist/`. The editor host needs a user, so a browser without a session is redirected to sign-in and a script without a session or a key gets 401.
 
 ### The pages
 
-An open applet is one screen with a left rail of pages: Code, Logs, Requests, Emails, SQLite, KV, Blobs, Secrets, Versions and Settings. The top bar is a breadcrumb, the state pill, and Save and Deploy. Code is the file tree, tabs and the editor pane, with the live applet in an optional preview beside it and the bundler's errors and warnings from the last deploy under it. Logs and Requests follow the two registry tables, filtered to the current version by default with a switch to all versions. Logs follows both, to put each run's lines under its request row. Requests has a small bar chart above the list, the last 24 hours or 7 days across every version, failures in red. Emails lists the applet's mail in and out. SQLite lists the applet's tables with row counts, runs any statement against the live database, and downloads a dump as SQL, which the page builds from queries; the runtime's own `_cf_` tables, `kv` among them, and SQLite's own `sqlite_` objects are left out. KV lists keys by prefix with values as JSON, Blobs lists the bucket under the applet's prefix and uploads a file under it, and both delete. Secrets sets and deletes the applet's secrets and shows names only. Versions is the list with the files each one changed, and view and rollback per row. Settings shows the registry row, renames the applet, sets the description, visibility, egress, schedule and email switch, fires the schedule now, forks the live version into a new applet, lists the live version's dependencies with 're-resolve', downloads the live source as a zip the page builds itself, and discards the draft. Its danger zone removes the applet once its name is typed.
+An open applet is one screen with a left rail of pages: Code, Logs, Requests, Emails, SQLite, KV, Blobs, Secrets, Versions and Settings. The top bar is a breadcrumb, the state pill, and Save and Deploy. Code is the file tree, tabs and the editor pane, with the live applet in an optional preview beside it and the bundler's errors and warnings from the last deploy under it. Logs and Requests follow the two registry tables, filtered to the current version by default with a switch to all versions. Logs follows both, to put each run's lines under its request row. Requests has a small bar chart above the list, the last 24 hours or 7 days across every version, failures in red. Emails lists the applet's mail in and out across every version. Only Code, Logs, Requests and Versions keep a version selection; storage, email and settings pages drop it from the URL. SQLite lists the applet's tables with row counts, runs any statement against the live database, and downloads a dump as SQL, which the page builds from queries; the runtime's own `_cf_` tables, `kv` among them, and SQLite's own `sqlite_` objects are left out. KV lists keys by prefix with values as JSON, Blobs lists the bucket under the applet's prefix and uploads a file under it, and both delete. Secrets sets and deletes the applet's secrets and shows names only. Versions is the list with the files each one changed, and view and rollback per row. Settings shows the registry row, renames the applet, sets the description, visibility, egress, schedule and email switch, fires the schedule now, forks the live version into a new applet, lists the live version's dependencies with 're-resolve', downloads the live source as a zip the page builds itself, and discards the draft. Its danger zone removes the applet once its name is typed.
 
 Home shows the user's six most recently changed applets as cards: name, description, visibility and trigger badges, when it last changed, and a red dot when the last 24 hours had failed runs. The Applets page lists them all with search; the admin's also lists everyone else's applets with their owner, which do not open and can be removed. New applet is a button on both: it names the applet and deploys the chosen template as v1, or the files of a zip picked from disk, which is how a downloaded source comes back; the page reads the zip itself. The platform Logs page lists runs across the user's own applets, newest first, with filters for applet, status and trigger kept in the query string; a row opens to the lines that run wrote. For the admin it has a second view, platform, which is `platform_logs` newest first with a level filter, each line linking to its applet. The platform Settings page has one section per URL under `/settings/`. For every user: profile, browser sessions with revoke, and API keys. For the admin: users, the schedules of every applet, unclaimed mail, and read-only platform info, which is the host suffix, the admin, the mail sender, the default model and how long logs and emails are kept. The editor's own events, saved, deployed, rolled back, go to the status line and never into the log stream.
 
-A draft is stored source and nothing else. The editor has no preview environment: Deploy makes a real version current, so the live applet swaps to it and keeps its storage. A save is live at once and the database is one per applet, shared by every version of it.
+A draft is stored source and nothing else. The editor has no preview environment: Deploy makes a real version current, so the live applet swaps to it and keeps its storage. Saving changes only the draft. Deploy publishes its code. The database is one per applet, shared by every version.
 
 ## The design system
 
@@ -398,7 +400,7 @@ Generated component files are excluded from lint and format, since they are not 
 | applet-to-applet calls dispatched inside `Egress` | a worker's `fetch()` to its own zone skips Workers, and every applet `fetch()` already passes through `Egress` |
 | applets as loaded code run as facets | no deploy per applet, storage isolation from the runtime, sync SQL, egress per applet |
 | four scripts, router, bundler, browser and editor | the router's upload stays small, and a bundler, browser or editor change never touches ingress |
-| the editor as a platform script, not an applet | applets are our own code plus its npm dependencies, trusted less than the platform; the editor needs the admin API, and it ships with the platform |
+| the editor as a platform script, not an applet | applets are our own code plus its npm dependencies, trusted less than the platform; the editor needs the API, and it ships with the platform |
 | CodeMirror for the editor pane, Pierre's trees for the file tree | CodeMirror is modular, so the page carries only the languages an applet holds, and it measures text from the DOM; Pierre's edit mode placed the caret from canvas widths and drifted under the page's letter-spacing, and Monaco was 13 MB and could not take the page's theme |
 | shadcn on Base UI for the two pages we maintain | components are files we own, one theme in `packages/ui`, and every agent knows the API |
 | bundles in D1 as content-addressed parts, not R2 | one transactional store for a version with nothing to orphan, and no R2 read on a cold load; a probe loaded a 16 MB module from R2 in 0.3 to 1.4 s |
@@ -410,12 +412,12 @@ Generated component files are excluded from lint and format, since they are not 
 | Effect in the router and the repo's scripts, not in applets or `@std` | services with explicit dependencies, one `HttpApi` contract in `packages/api` shared by the router, the editor and `push`, and spans on every step; applet code stays a script |
 | Preact for applet client code | applets have no tsconfig, so JSX is one platform-wide choice, and Preact is small |
 | the bundler reads export names, never the code | a small source scan finds the declarations, and esbuild fails on anything it cannot resolve |
-| `push` talks to the router over HTTP | one owner of the registry, and the same admin API the editor uses |
+| `push` talks to the router over HTTP | one owner of the registry, and the same API the editor uses |
 | two member roles, anonymous access, three fixed visibilities, one `can` function | family use needs no custom roles or per-applet lists of people, and one table is small enough to test cell by cell |
 | code, logs and secrets belong to the owner alone | the product never shows one person's code to another, the admin included |
 | an API key is its creator | one way to get a subject covers scripts and machine callers of private applets |
 | the router is the OAuth authorization server for MCP clients | an MCP client has no place for a key, Better Auth already holds the users, and one URL is the whole setup |
-| the MCP server inside the router, stateless | the tools share the admin API's services, and nothing outlives a request on Workers |
+| the MCP server inside the router, stateless | the tools share the API's services, and nothing outlives a request on Workers |
 | the OpenAPI document generated from the `HttpApi` | the contract the router runs is the one documented |
 | Better Auth inside the router | the platform must deploy on its own, and Better Auth runs on D1 |
 | magic link by email, no OAuth | one binding instead of a Google project, the `users` table is the whole identity policy, and the same binding sends applets' mail |

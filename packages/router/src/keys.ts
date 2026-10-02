@@ -1,4 +1,4 @@
-/** API keys: minted once for their creator to see, kept as a SHA-256 hash. No `cloudflare:workers` import, so `admin.ts` stays loadable in vitest. */
+/** API keys: minted once for their creator to see, kept as a SHA-256 hash. No `cloudflare:workers` import, so `api.ts` stays loadable in vitest. */
 
 export async function sha256(text: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));

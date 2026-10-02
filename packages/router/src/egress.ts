@@ -3,7 +3,7 @@
  * Workers, so `Egress` hands a request for a host under the suffix back to the
  * router's own ingress instead of the network.
  */
-import { reservedHosts } from "./types.ts";
+import { isAppletName } from "./hosts.ts";
 
 export const depthHeader = "x-applet-depth";
 
@@ -18,10 +18,10 @@ let inFlight = 0;
  * refusal. It carries no session, so only a public applet answers it, and it
  * counts the hops so a chain of applets calling each other ends.
  */
-export function internalCall(request: Request, suffix: string): Request | Response {
+export function internalCall(request: Request, suffix: string, mcpUrl: string): Request | Response {
   const host = new URL(request.url).hostname;
 
-  if (reservedHosts.includes(host.slice(0, -suffix.length))) {
+  if (!host.endsWith(suffix) || !isAppletName(host.slice(0, -suffix.length), suffix, mcpUrl)) {
     return Response.json({ error: "not an applet", host }, { status: 403 });
   }
 

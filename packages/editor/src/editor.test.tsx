@@ -1,5 +1,5 @@
 /**
- * The editor page against a stubbed admin API: open an applet, edit, save,
+ * The editor page against a stubbed API: open an applet, edit, save,
  * deploy, switch pages, roll back. `fetch` is replaced per test with a small
  * table of responses; a question the page asks is answered by clicking in its dialog.
  */
@@ -11,7 +11,7 @@ import type { RequestEntry, SqlResult } from "@applets/api";
 import { App } from "./app.tsx";
 import { dumpSql } from "./editor/dump.ts";
 import { zip } from "./editor/zip.ts";
-import { closeEditor, updateFile, useStore } from "./store.ts";
+import { closeEditor, load, updateFile, useStore } from "./store.ts";
 import "./styles.css";
 
 type Handler = (body: string) => object | Error | Promise<object | Error>;
@@ -88,7 +88,7 @@ function routes(): Map<string, Handler> {
 
   return new Map<string, Handler>([
     ["GET /api/applets", () => ({ applets: [{ ...applet(), failures: 2 }, theirs] })],
-    ["GET /api/emails/unclaimed?limit=50", () => ({ emails: [] })],
+    ["GET /api/platform/emails/unclaimed?limit=50", () => ({ emails: [] })],
     ["GET /api/me", () => ({ email: "owner@example.com", role: "user" })],
     ["GET /api/keys", () => ({ keys: [] })],
     ["GET /api/applets/hello", () => ({ applet: applet(), versions })],
@@ -910,7 +910,7 @@ test("a user's settings have their own sections and none of the admin's", async 
 test("the admin's settings add users, schedules, unclaimed mail and platform info", async () => {
   const table = routes();
   table.set("GET /api/me", () => ({ email: "owner@example.com", role: "admin" }));
-  table.set("GET /api/users", () => ({
+  table.set("GET /api/platform/users", () => ({
     users: [{ email: "friend@example.com", added_at: "2026-09-20T10:00:00Z" }],
   }));
   table.set("GET /api/applets", () => ({ applets: [{ ...theirs, schedule: "0 * * * *" }] }));
@@ -932,4 +932,62 @@ test("the admin's settings add users, schedules, unclaimed mail and platform inf
   await page.getByRole("link", { name: "Platform" }).click();
   await expect.element(page.getByText("some/model")).toBeVisible();
   await expect.element(page.getByText("kept 7 days").first()).toBeVisible();
+});
+
+test("a pending save keeps newer edits dirty and blocks a concurrent deploy", async () => {
+  const table = routes();
+  let release!: (value: { updated_at: string }) => void;
+
+  const saved = new Promise<{ updated_at: string }>((resolve) => {
+    release = resolve;
+  });
+
+  table.set("PUT /api/applets/hello/draft", () => saved);
+  await openHello(table);
+  updateFile("main.ts", "submitted");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await vi.waitFor(() =>
+    expect(calls.some((call) => call.key === "PUT /api/applets/hello/draft")).toBe(true),
+  );
+  await expect.element(page.getByRole("button", { name: "Deploy", exact: true })).toBeDisabled();
+  updateFile("main.ts", "newer edit");
+  release({ updated_at: new Date().toISOString() });
+  await expect.element(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+  expect(useStore.getState().files.get("main.ts")).toBe("newer edit");
+  expect(useStore.getState().saved.get("main.ts")).toBe("submitted");
+});
+
+test("a late failed deploy cannot mark or reopen a replacement editing session", async () => {
+  const table = routes();
+  let release!: (value: Error) => void;
+
+  const deployed = new Promise<Error>((resolve) => {
+    release = resolve;
+  });
+
+  table.set("PUT /api/applets/hello/versions", () => deployed);
+  await openHello(table);
+  await page.getByRole("button", { name: "Deploy", exact: true }).click();
+  await vi.waitFor(() =>
+    expect(calls.some((call) => call.key === "PUT /api/applets/hello/versions")).toBe(true),
+  );
+  navigate("/applets");
+  await expect.element(page.getByRole("heading", { name: "Applets", exact: true })).toBeVisible();
+  closeEditor();
+  load("hello", null, { "main.ts": "replacement" });
+  release(new Error("old deploy failed"));
+  await vi.waitFor(() => expect(document.body.textContent).toContain("deploy failed"));
+  expect(location.pathname).toBe("/applets");
+  expect(useStore.getState().files.get("main.ts")).toBe("replacement");
+  expect(useStore.getState().problems).toEqual([]);
+});
+
+test("email URLs drop version and stream-only filters", async () => {
+  const table = routes();
+  table.set("GET /api/applets/hello/emails?limit=50", () => ({ emails: [] }));
+  await openAt("/applets/hello/emails?version=1&all=true", table);
+  await expect.element(page.getByRole("button", { name: "clear", exact: true })).toBeVisible();
+  expect(location.search).toBe("");
+  expect(useStore.getState().version).toBeNull();
+  expect(calls.some((call) => call.key.includes("source?version=1"))).toBe(false);
 });

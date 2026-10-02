@@ -1,5 +1,5 @@
 /**
- * The admin API contract. The router implements it with `HttpApiBuilder`; the
+ * The API contract. The router implements it with `HttpApiBuilder`; the
  * editor and `vp run push` call it through the client `HttpApiClient` derives.
  * Every registry row that crosses the wire is a Schema here, so the router
  * decodes rows and encodes responses with the shapes the clients decode, and
@@ -537,17 +537,18 @@ const keys = HttpApiGroup.make("keys").add(
 );
 
 /** Who may sign in. Only the admin reads or changes the list. */
+/** Who may sign in. Everything under `/platform/` needs the admin role. */
 const users = HttpApiGroup.make("users").add(
-  HttpApiEndpoint.get("list", "/users", {
+  HttpApiEndpoint.get("list", "/platform/users", {
     success: Schema.Struct({ users: Schema.Array(User) }),
     error: Forbidden,
   }),
-  HttpApiEndpoint.put("add", "/users/:email", {
+  HttpApiEndpoint.put("add", "/platform/users/:email", {
     params: { email: Schema.String },
     success: Ok,
     error: Forbidden,
   }),
-  HttpApiEndpoint.delete("remove", "/users/:email", {
+  HttpApiEndpoint.delete("remove", "/platform/users/:email", {
     params: { email: Schema.String },
     success: Ok,
     error: Forbidden,
@@ -566,10 +567,11 @@ const sessions = HttpApiGroup.make("sessions").add(
   }),
 );
 
+/** The caller, and the platform itself for the admin: everything under `/platform/` needs that role. */
 const platform = HttpApiGroup.make("platform").add(
   HttpApiEndpoint.get("me", "/me", { success: Me }),
   HttpApiEndpoint.get("info", "/platform", { success: Platform, error: Forbidden }),
-  HttpApiEndpoint.get("unclaimed", "/emails/unclaimed", {
+  HttpApiEndpoint.get("unclaimed", "/platform/emails/unclaimed", {
     query: Window,
     success: Schema.Struct({ emails: Schema.Array(EmailEntry) }),
     error: Forbidden,

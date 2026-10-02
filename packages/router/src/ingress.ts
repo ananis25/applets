@@ -1,5 +1,5 @@
 /**
- * Ingress. Routes by hostname: the admin API on `admin.`, sign-in and OAuth on
+ * Ingress. Routes by hostname: the API on `api.`, sign-in and OAuth on
  * `auth.`, the editor on `app.`, the family launcher on `home.`, the MCP server on `MCP_URL`'s host, every
  * other host to that applet's Supervisor after the policy check. One Effect over the request in context; the tagged errors it
  * fails with become responses in one place at the bottom. No
@@ -9,11 +9,12 @@ import { AppletFailed, Forbidden, NotFound, Unauthorized } from "@applets/api";
 import { Context, Effect, Fiber, Option } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
-import { AdminApi, docsPaths } from "./admin.ts";
+import { Api, docsPaths } from "./api.ts";
 import { Auth, mcpScopes } from "./auth.ts";
 import { Bucket, Editor, Supervisors, Vars } from "./bindings.ts";
 import { verifyBlobDownload } from "./blobDownload.ts";
 import { Caller } from "./caller.ts";
+import { isAppletName, platformHost } from "./hosts.ts";
 import { depthHeader } from "./egress.ts";
 import { faviconOf } from "./favicon.ts";
 import { AppletFetch, serve as mcp } from "./mcp.ts";
@@ -21,7 +22,7 @@ import { log } from "./platformLog.ts";
 import { can, isCrossOrigin, isCrossOriginSessionWrite, type Member } from "./policy.ts";
 import { Registry } from "./registry.ts";
 import { traceHeaders } from "./tracing.ts";
-import { isAppletName, requestHeader, targetHeaders, targetOf, userHeader } from "./types.ts";
+import { requestHeader, targetHeaders, targetOf, userHeader } from "./types.ts";
 
 /**
  * How the request arrived: from outside, or from an applet through `Egress`,
@@ -80,17 +81,17 @@ const authHost = Effect.fn("Ingress.auth")(function* (
 });
 
 /** The API as `caller`, on the path under the host's prefix. Every line it logs names the caller, and a 5xx is a line of its own. */
-const adminApi = (
+const serveApi = (
   request: HttpServerRequest.HttpServerRequest,
   caller: typeof Caller.Service,
   prefix: string,
 ) =>
-  AdminApi.use((api) =>
+  Api.use((api) =>
     api.pipe(
       Effect.tap((response) =>
         response.status < 500
           ? Effect.void
-          : log.error("admin API failed", {
+          : log.error("API failed", {
               method: request.method,
               path: request.url.slice(prefix.length),
               status: response.status,
@@ -105,7 +106,7 @@ const adminApi = (
     ),
   );
 
-/** The editor page from the editor script, and the admin API under `/api/` for it. Both need a user, and the API only answers the editor's own page. */
+/** The editor page from the editor script, and the API under `/api/` for it. Both need a user, and the API only answers the editor's own page. */
 const editorHost = Effect.fn("Ingress.editor")(function* (
   request: HttpServerRequest.HttpServerRequest,
 ) {
@@ -120,7 +121,7 @@ const editorHost = Effect.fn("Ingress.editor")(function* (
   if (isCrossOrigin(incoming))
     return yield* new Forbidden({ message: "the editor's own page only" });
 
-  return yield* adminApi(request, subject, "/api");
+  return yield* serveApi(request, subject, "/api");
 });
 
 /**
@@ -166,22 +167,24 @@ const homeHost = Effect.fn("Ingress.home")(function* (
   return yield* fromEditor(new Request(url, incoming));
 });
 
-/** The admin API for scripts. It takes a bearer key and never a cookie, so no page on a sibling host can call it as its visitor. Its OpenAPI document and the docs page over it are open. */
-const adminHost = Effect.fn("Ingress.admin")(function* (
-  request: HttpServerRequest.HttpServerRequest,
-) {
+/**
+ * The API for scripts on `api.`. It takes a bearer key and never a cookie, so no page on a
+ * sibling host can call it as its visitor, and a browser without one gets the 401 rather than the
+ * sign-in redirect, since signing in cannot help here. Its OpenAPI document and the docs page over it are open.
+ */
+const apiHost = Effect.fn("Ingress.api")(function* (request: HttpServerRequest.HttpServerRequest) {
   if (docsPaths.some((path) => path === pathOf(request)))
-    return yield* adminApi(request, { role: "user", email: "" }, "");
+    return yield* serveApi(request, { role: "user", email: "" }, "");
 
   if (!request.headers.authorization?.startsWith("Bearer "))
-    return yield* new Unauthorized({ message: "a bearer key is required" });
+    return refuse(401)(new Unauthorized({ message: "a bearer key is required" }));
 
   const auth = yield* Auth;
   const subject = yield* auth.subject(new Headers(request.headers));
 
   if (subject === null) return yield* new Unauthorized({ message: "unknown key" });
 
-  return yield* adminApi(request, subject, "");
+  return yield* serveApi(request, subject, "");
 });
 
 /**
@@ -317,7 +320,10 @@ const appletHost = Effect.fn("Ingress.applet")(function* (
   name: string,
   given?: Member,
 ) {
-  if (!isAppletName(name)) return yield* new NotFound({ message: `no host ${name}` });
+  const { HOST_SUFFIX, MCP_URL } = yield* Vars;
+
+  if (!isAppletName(name, HOST_SUFFIX, MCP_URL))
+    return yield* new NotFound({ message: `no host ${name}` });
 
   if (pathOf(request) === "/favicon.ico") return favicon(name);
 
@@ -439,15 +445,18 @@ export const handle = Effect.gen(function* () {
   const { HOST_SUFFIX: suffix, MCP_URL } = yield* Vars;
   const host = new URL(request.originalUrl).hostname;
 
-  if (host === `auth${suffix}`) return yield* authHost(request);
-
-  if (host === new URL(MCP_URL).hostname) return yield* mcpHost(request);
-
-  if (host === `app${suffix}`) return yield* editorHost(request);
-
-  if (host === `home${suffix}`) return yield* homeHost(request);
-
-  if (host === `admin${suffix}`) return yield* adminHost(request);
+  switch (platformHost(host, suffix, MCP_URL)) {
+    case "auth":
+      return yield* authHost(request);
+    case "mcp":
+      return yield* mcpHost(request);
+    case "app":
+      return yield* editorHost(request);
+    case "home":
+      return yield* homeHost(request);
+    case "api":
+      return yield* apiHost(request);
+  }
 
   return yield* appletHost(request, host.endsWith(suffix) ? host.slice(0, -suffix.length) : "");
 }).pipe(

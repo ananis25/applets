@@ -15,7 +15,7 @@ import { appletQuery, filesQuery } from "../queries.ts";
 import { appletLink, liveUrl, relTime, type View } from "../urls.ts";
 import { anyDirty, togglePreview, useStore } from "../store.ts";
 import { RailTrigger } from "../rail.tsx";
-import { useDeploy, useDeploying, useSaveDraft } from "./mutations.ts";
+import { useDeploy, useDeploying, useWorking, useSaveDraft } from "./workspace.ts";
 
 /** The state of the applet in a few words: the version showing, and whether it is a draft, deployed or rolled back. */
 export function usePill(name: string): string {
@@ -47,6 +47,7 @@ export function Topbar({ name, view }: { name: string; view: View }) {
   const previewOpen = useStore((state) => state.previewOpen);
   const save = useSaveDraft(name);
   const deploy = useDeploy(name);
+  const working = useWorking(name);
   const deploying = useDeploying(name);
   const crumb = view === "code" ? activeFile : view;
 
@@ -113,10 +114,10 @@ export function Topbar({ name, view }: { name: string; view: View }) {
       >
         open ↗
       </Button>
-      <Button variant="outline" size="sm" disabled={deploying || viewing || !dirty} onClick={save}>
+      <Button variant="outline" size="sm" disabled={working || viewing || !dirty} onClick={save}>
         Save
       </Button>
-      <Button size="sm" disabled={deploying || viewing} onClick={() => deploy.mutate(false)}>
+      <Button size="sm" disabled={working || viewing} onClick={() => deploy.deploy(false)}>
         {deploying ? "deploying…" : "Deploy"}
       </Button>
     </header>

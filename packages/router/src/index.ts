@@ -74,7 +74,7 @@ export class Egress extends WorkerEntrypoint<Cloudflare.Env, AppletProps> {
   override async fetch(request: Request): Promise<Response> {
     if (!new URL(request.url).hostname.endsWith(this.env.HOST_SUFFIX)) return fetch(request);
 
-    const call = internalCall(request, this.env.HOST_SUFFIX);
+    const call = internalCall(request, this.env.HOST_SUFFIX, this.env.MCP_URL);
 
     if (call instanceof Response) return call;
 

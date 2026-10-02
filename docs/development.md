@@ -40,7 +40,7 @@ Secrets and the host suffix live in `secrets.env`, copied from `secrets.env.exam
 
 ## One surface
 
-Every capability is an admin API route first; the editor, the CLI and the MCP tools call those routes' handlers and never add logic of their own. A new MCP tool starts as a new route.
+Every capability is an API route first; the editor, the CLI and the MCP tools call those routes' handlers and never add logic of their own. A new MCP tool starts as a new route.
 
 ## Workflows
 
@@ -75,7 +75,7 @@ There are two ways to run the platform on your machine. Both open the same edito
 `vp run dev` starts two processes and stops both when either exits:
 
 - `wrangler dev` with the router, the bundler and the browser on port 8787. D1, R2 and Durable Object state are local files under `.wrangler/`. Only the browser's Browser Run binding reaches the account, as a remote binding
-- the editor page on Vite, which proxies `/api/` to `http://admin.localhost:8787` with the admin token
+- the editor page on Vite, which proxies `/api/` to `http://api.localhost:8787` with the admin token
 
 `<applet>.localhost` resolves to loopback in every browser, so the router routes by hostname with no DNS. Before it starts, the script writes `packages/router/.dev.vars` from `secrets.env`, always with the `.localhost` suffix whatever the file names.
 
@@ -93,7 +93,7 @@ The sign-in flow itself does not work locally, because `*.localhost` cannot shar
 
 ### The page against the deployed platform, `vp run dev:remote`
 
-`vp run dev:remote` starts only the editor page on Vite. It proxies `/api/` to `https://admin<suffix>` with the admin token from `secrets.env`, so the page needs no session. It shows the real applets, logs and versions, and every action in it is real: Deploy makes a live version, Remove deletes the applet and its storage.
+`vp run dev:remote` starts only the editor page on Vite. It proxies `/api/` to `https://api<suffix>` with the admin token from `secrets.env`, so the page needs no session. It shows the real applets, logs and versions, and every action in it is real: Deploy makes a live version, Remove deletes the applet and its storage.
 
 The router and the bundler do not run locally in this mode. A backend change needs `vp run deploy` before the page sees it. The live preview points at the real applet hosts, so a private applet shows the sign-in page there until the browser has a session for the suffix.
 
@@ -112,7 +112,7 @@ applets/
     browser/           the third script, Puppeteer over Browser Run
     std/               the library applets import
     cli/               the repo's scripts: push, deploy, dev
-    editor/            the third script, a Vite React page over the admin API
+    editor/            the third script, a Vite React page over the API
     ui/                the design system both pages build on: shadcn components on Base UI, one theme
   examples/            one working applet per shape, deployed after every platform change
   tools/               the vendored anti-slop lint plugin

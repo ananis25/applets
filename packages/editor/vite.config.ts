@@ -1,6 +1,6 @@
-import { readFileSync } from "node:fs";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import { ui } from "@applets/ui/vite";
+import { originFor, readSettings } from "../cli/src/config.ts";
 import { defineConfig } from "vite-plus";
 import { playwright } from "vite-plus/test/browser-playwright";
 
@@ -14,18 +14,6 @@ import { playwright } from "vite-plus/test/browser-playwright";
  * `vp test` runs the page's tests in a headless Chromium through Vitest browser
  * mode, with `fetch` stubbed in each test, so no router is needed.
  */
-function secrets(): Map<string, string> {
-  const lines = readFileSync(new URL("../../secrets.env", import.meta.url), "utf8").split("\n");
-  return new Map(
-    lines
-      .filter((line) => line.includes("=") && !line.startsWith("#"))
-      .map((line) => {
-        const at = line.indexOf("=");
-        return [line.slice(0, at).trim(), line.slice(at + 1).trim()];
-      }),
-  );
-}
-
 /**
  * Three pages: the editor at `/`, the sign-in page at `/auth` and the family
  * launcher at `/home`, all served by the editor script. The latter two are
@@ -59,10 +47,9 @@ const test = {
 export default defineConfig(({ command }) => {
   if (command === "build") return { plugins: plugins(), build, test };
 
-  const env = secrets();
-  const named = process.env.APPLET_HOST_SUFFIX ?? env.get("APPLET_HOST_SUFFIX") ?? ".localhost";
+  const env = readSettings();
+  const named = env.get("APPLET_HOST_SUFFIX") ?? ".localhost";
   const suffix = named === ".localhost" ? ".localhost:8787" : named;
-  const scheme = suffix.startsWith(".localhost") ? "http" : "https";
   process.env.VITE_HOST_SUFFIX = suffix;
 
   return {
@@ -72,7 +59,7 @@ export default defineConfig(({ command }) => {
     server: {
       proxy: {
         "/api": {
-          target: `${scheme}://admin${suffix}`,
+          target: originFor("api", named),
           changeOrigin: true,
           rewrite: (path) => path.slice("/api".length),
           headers: { Authorization: `Bearer ${env.get("ADMIN_TOKEN") ?? ""}` },

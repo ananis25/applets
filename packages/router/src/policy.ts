@@ -4,9 +4,9 @@
  * the router decides access. No `cloudflare:workers` import, so vitest loads it.
  */
 
-export const visibilities = ["private", "family", "public"] as const;
+import type { Visibility } from "@applets/api";
 
-export type Visibility = (typeof visibilities)[number];
+export { visibilities, type Visibility } from "@applets/api";
 
 /** `admin` is the owner from `OWNER_EMAIL`; `user` is a row in `users`. */
 export type Member = { readonly role: "admin" | "user"; readonly email: string };

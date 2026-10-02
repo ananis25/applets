@@ -1,5 +1,5 @@
 /**
- * The admin API from the page: the client `@applets/api` derives, called as a
+ * The API from the page: the client `@applets/api` derives, called as a
  * Promise with every failure as an `Error` whose message the pages show.
  */
 import { api, BuildFailed } from "@applets/api";

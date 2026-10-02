@@ -8,7 +8,7 @@ import { appletQuery } from "../queries.ts";
 import { ask } from "../ask.tsx";
 import { appletLink, relTime } from "../urls.ts";
 import { useStore } from "../store.ts";
-import { usePatchApplet } from "./mutations.ts";
+import { usePatchApplet } from "./workspace.ts";
 
 function describeChange(changed: Version["changed"]): string {
   if (changed.length > 4) return `${changed.length} files changed`;
