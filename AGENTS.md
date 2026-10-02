@@ -3,7 +3,7 @@
 `README.md` is the intent. `docs/development.md` is the commands and local setup, `docs/architecture.md` is the design, `docs/applets.md` and `docs/platform.md` are what an applet and a deployment can do. Read what fits the task.
 
 - Never commit. The owner does.
-- Use `vp` directly: `vp install`, `vp run check --fix`, `vp run test`. Never `npx vp`, `npm` or `npx`.
+- Use `vp` directly: `vp install`, `vp run check`, `vp run test`. For automatic lint and format fixes, use `vp run check:fix`. Never `npx vp`, `npm` or `npx`.
 - Keep private choices out of the repo: no real domain, email, account ids or paths from a local machine. Use `example.com` and `.localhost` placeholders.
 - Something deployed misbehaves: run `vp run tail` in the background, reproduce, read the `!` lines. Then reproduce on `vp run dev` before reading code. Do this before probing the platform by hand.
 - Never back up state by copying or renaming files or folders (`.wrangler.before-ids/`, `foo.old.ts`). Git is the backup. Delete what is in the way.

@@ -1,7 +1,7 @@
 /**
  * The platform, deployed and local.
  *
- * `vp run deploy` is the one place that runs `wrangler deploy`: the bundler
+ * `vp run deploy` is the one place that runs `cf deploy`: the bundler
  * first, then the browser, the editor from a fresh Vite build, and the router, because the
  * router's service bindings resolve at deploy. The registry's migrations are
  * applied just before the router goes up, since the router expects its tables. The router's vars go up as
@@ -25,13 +25,11 @@ import {
   deleteBucket,
   deleteDatabase,
   deleteWorker,
-  Login,
   routeMailTo,
   workerNames,
 } from "./cloudflare.ts";
+import { localRegistryId } from "./config.ts";
 import { box, CliError, failed, originFor, paths, routerVars } from "./environment.ts";
-
-const routerConfigName = "wrangler.local.jsonc";
 
 type Attached = {
   readonly cwd: string;
@@ -68,21 +66,32 @@ const attached = (command: string, args: ReadonlyArray<string>, options: Attache
     }
   });
 
-const wrangler = (args: ReadonlyArray<string>, cwd: string, input?: string) =>
-  attached("vpx", ["wrangler", ...args], { cwd, input });
+const cf = (args: ReadonlyArray<string>, cwd: string, env?: Record<string, string>) =>
+  attached("cf", args, { cwd, env });
 
 /**
- * Applies the registry's pending migrations. Wrangler asks before applying to a
- * remote database; a `y` on its stdin answers, and stdin not being a terminal
- * makes it assume yes anyway.
+ * Applies the registry's pending migrations, from the router package where the
+ * migrations are. The local database lives where the router's dev server keeps
+ * its state, which is not where `cf` would put it on its own.
  */
-const applyMigrations = (target: "--local" | "--remote", config: string, cwd: string) =>
-  wrangler(["d1", "migrations", "apply", resources.registry, target, "-c", config], cwd, "y\n");
+const applyMigrations = (database: string, target: "local" | "remote") =>
+  cf(
+    [
+      "d1",
+      "migrations",
+      "apply",
+      database,
+      "--dir",
+      "migrations",
+      ...(target === "local" ? ["--local", "--persist-to", ".wrangler/state"] : []),
+    ],
+    paths.routerPackage,
+  );
 
-/** Builds the editor page into its `dist/`, which is the directory its wrangler config serves. */
+/** Builds the editor page into its `dist/`, which is the directory its `wrangler.config.ts` serves. */
 const buildEditor = attached("vp", ["build"], { cwd: paths.editorPackage });
 
-/** Every resource of the platform on the account, by name. The wrangler configs name the same ones. */
+/** Every resource of the platform on the account, by name. The cloudflare configs name the same ones. */
 const resources = {
   router: "applets-router",
   bundler: "applets-bundler",
@@ -93,29 +102,9 @@ const resources = {
   deps: "applets-deps",
 };
 
-const registryBinding = `"database_name": "${resources.registry}"`;
-
-/**
- * The committed router config with the two host-specific values spliced in:
- * the wildcard route on the suffix's zone, and the registry's database id.
- * No vars; those go up as secrets.
- */
-export const routerConfig = (committed: string, suffix: string, databaseId: string): string => {
-  const routes = [{ pattern: `*${suffix}/*`, zone_name: suffix.slice(1) }];
-
-  const bound = committed.replace(
-    registryBinding,
-    `${registryBinding}, "database_id": "${databaseId}"`,
-  );
-
-  return `${bound.slice(0, bound.lastIndexOf("}"))}  "routes": ${JSON.stringify(routes)},\n}\n`;
-};
-
 /**
  * The registry's database id, creating the database when the account has none.
- * The deploy names the id itself because wrangler would otherwise inherit it
- * from the deployed router's settings, and that fails with error 7404 once the
- * database has been deleted.
+ * The router's config takes it from `APPLETS_REGISTRY_ID`.
  */
 const registryId = Effect.gen(function* () {
   const existing = (yield* databaseIds).get(resources.registry);
@@ -123,38 +112,25 @@ const registryId = Effect.gen(function* () {
   return existing ?? (yield* createDatabase(resources.registry));
 });
 
-/** Writes `wrangler.local.jsonc`, which git ignores, beside the committed config so `main` resolves the same. */
-const writeRouterConfig = (id: string) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const committed = yield* fs.readFileString(path.join(paths.routerPackage, "wrangler.jsonc"));
+const deployBundler = cf(["deploy"], paths.bundlerPackage);
 
-    yield* fs.writeFileString(
-      path.join(paths.routerPackage, routerConfigName),
-      routerConfig(committed, box.hostSuffix, id),
-    );
-  }).pipe(Effect.mapError(failed("Could not write the router config")));
-
-const deployBundler = wrangler(["deploy"], paths.bundlerPackage);
-
-const deployBrowser = wrangler(["deploy"], paths.browserPackage);
+const deployBrowser = cf(["deploy"], paths.browserPackage);
 
 const deployEditor = Effect.gen(function* () {
   yield* buildEditor;
-  yield* wrangler(["deploy"], paths.editorPackage);
+  yield* cf(["deploy"], paths.editorPackage);
 });
 
 /** The router with its route and registry id, then its secrets, then the mail rule that names it. */
 const deployRouter = Effect.gen(function* () {
   const vars = yield* routerVars;
+  const id = yield* registryId;
 
-  yield* writeRouterConfig(yield* registryId);
-  yield* applyMigrations("--remote", routerConfigName, paths.routerPackage);
-  yield* wrangler(["deploy", "-c", routerConfigName], paths.routerPackage);
-  yield* wrangler(
-    ["secret", "bulk", "-c", routerConfigName],
+  yield* applyMigrations(id, "remote");
+  yield* cf(["deploy", "--mode", "production"], paths.routerPackage, { APPLETS_REGISTRY_ID: id });
+  yield* cf(
+    ["workers", "secrets", "bulk", "--worker", resources.router, "--body", JSON.stringify(vars)],
     paths.routerPackage,
-    JSON.stringify(vars),
   );
   yield* routeMailTo(resources.router);
 });
@@ -184,7 +160,7 @@ export const platformDeploy = (chosen: ReadonlyArray<Target>) =>
     for (const target of targets) {
       if (chosen.length === 0 || chosen.includes(target)) yield* deployers[target];
     }
-  }).pipe(Effect.provide(Login.layer));
+  });
 
 /**
  * Deletes everything `vp run deploy` creates: the four workers with every
@@ -232,7 +208,7 @@ export const platformDestroy = (confirmed: boolean) =>
       yield* Console.log(`deleting ${name} and its objects`);
       yield* deleteBucket(name);
     }
-  }).pipe(Effect.provide(Login.layer));
+  });
 
 /**
  * The router's vars as `.dev.vars`, always on `.localhost` whatever suffix
@@ -260,30 +236,25 @@ const writeDevVars = Effect.gen(function* () {
 });
 
 /**
- * The router, the bundler and the browser in one local `wrangler dev`, and the editor page
- * on Vite proxying `/api/` to it. The router's config comes first because the
- * first config gets the listener. The editor worker is left out: its page
- * needs a session, and `*.localhost` cannot hold one. Either process exiting
- * stops the other.
+ * The router, the bundler and the browser each in their own local `cf dev`,
+ * joined over the local dev registry, and the editor page on Vite proxying
+ * `/api/` to the router. The router is on the port the origins name; the
+ * other two are only reached over service bindings. They start a few seconds
+ * apart because two starting at once can pick the same inspector port and one
+ * dies. The editor worker is left out: its page needs a session, and
+ * `*.localhost` cannot hold one. Any process exiting stops the rest.
  */
 export const platformDev = Effect.gen(function* () {
   yield* writeDevVars;
-  yield* applyMigrations("--local", "packages/router/wrangler.jsonc", paths.repoRoot);
+  yield* applyMigrations(localRegistryId, "local");
 
-  const configs = [
-    "-c",
-    "packages/router/wrangler.jsonc",
-    "-c",
-    "packages/bundler/wrangler.jsonc",
-    "-c",
-    "packages/browser/wrangler.jsonc",
-  ];
-
-  yield* Effect.raceFirst(
-    attached("vpx", ["wrangler", "dev", ...configs], { cwd: paths.repoRoot }),
+  yield* Effect.raceAll([
+    cf(["dev", "--port", "8787"], paths.routerPackage),
+    cf(["dev", "--port", "8788"], paths.bundlerPackage).pipe(Effect.delay("4 seconds")),
+    cf(["dev", "--port", "8789"], paths.browserPackage).pipe(Effect.delay("8 seconds")),
     attached("vp", ["dev"], {
       cwd: paths.editorPackage,
       env: { APPLET_HOST_SUFFIX: ".localhost" },
     }),
-  );
+  ]);
 });

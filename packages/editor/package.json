@@ -37,6 +37,7 @@
     "@cloudflare/workers-types": "^5.20260910.1",
     "@vitest/browser-playwright": "^4.1.11",
     "playwright": "^1.63.0",
-    "vitest-browser-react": "^2.3.0"
+    "vitest-browser-react": "^2.3.0",
+    "wrangler": "^4.137.0"
   }
 }

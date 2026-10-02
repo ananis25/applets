@@ -42,7 +42,7 @@ A limitation is that you're limited to the JS/TS stack but that's pretty suffici
 
 - A `@std` library, that gives every applet SQLite, key-value storage, blobs, email, AI, a headless browser, logging and a page shell.
 
-- The `wrangler` CLI deploys the platform and can also run it all it locally for testing.
+- The `cf` CLI deploys the platform and can also run it all locally for testing.
 
 # Docs
 

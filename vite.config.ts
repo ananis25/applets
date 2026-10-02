@@ -1,7 +1,7 @@
 import { defineConfig } from "vite-plus";
 
 export default defineConfig({
-  // The router imports `docs/*.md` as text, which wrangler does with a `Text` rule; this does the same for its tests.
+  // The router imports `docs/*.md` as text, which its `wrangler.config.ts` does with a `Text` rule; this does the same for its tests.
   plugins: [
     {
       name: "markdown-as-text",
@@ -18,13 +18,14 @@ export default defineConfig({
       "tools/**",
       ".vite-hooks/**",
       "**/*.config.{js,cjs,mjs,ts,cts,mts}",
-      "**/{package,tsconfig,wrangler}.json*",
-      "**/wrangler.local.jsonc",
+      "**/{package,tsconfig}.json*",
+      "**/.cloudflare/**",
     ],
   },
   lint: {
     ignorePatterns: [
       "examples/**",
+      "**/.cloudflare/**",
       "packages/ui/src/components/ui/**",
       "packages/editor/src/routeTree.gen.ts",
       "tools/**",

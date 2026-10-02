@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** The repo's scripts, behind `vp run push`, `vp run remove`, `vp run deploy`, `vp run destroy` and `vp run dev`. */
-import { NodeHttpClient, NodeRuntime, NodeServices } from "@effect/platform-node";
-import { Effect, Layer, Option } from "effect";
+import { NodeRuntime, NodeServices } from "@effect/platform-node";
+import { Effect, Option } from "effect";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 
 import { platformDeploy, platformDestroy, platformDev, targets } from "./platform.ts";
@@ -40,9 +40,7 @@ const deployCommand = Command.make(
     ),
   },
   ({ targets: chosen }) => platformDeploy(chosen),
-).pipe(
-  Command.withDescription("wrangler deploy the bundler, the browser, the editor and the router"),
-);
+).pipe(Command.withDescription("cf deploy the bundler, the browser, the editor and the router"));
 
 const destroyCommand = Command.make(
   "destroy",
@@ -76,6 +74,6 @@ const report = (error: { readonly message: string }) =>
 
 Command.run(applets, { version: "0.0.0" }).pipe(
   Effect.catchTag("CliError", report),
-  Effect.provide(Layer.mergeAll(NodeServices.layer, NodeHttpClient.layerUndici)),
+  Effect.provide(NodeServices.layer),
   NodeRuntime.runMain({ disableErrorReporting: false }),
 );

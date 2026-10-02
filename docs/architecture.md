@@ -32,7 +32,7 @@ loaded code, no wrangler config, one module per version in a registry row
 Terms used throughout:
 
 - a facet is a Durable Object running inside another one, with its own SQLite, from a class the parent loaded
-- a script, or worker, is one Wrangler project, deployed with `wrangler deploy`
+- a script, or worker, is one `cloudflare.config.ts` project, deployed with `cf deploy`
 
 The router is the whole front door. One route, `*<suffix>/*`, sends every hostname one level under the suffix to it, and it routes by hostname from there. The apex is not matched. `hosts.ts` classifies platform hosts and validates applet names for creation, ingress and internal calls. The reserved names are `api`, `app`, `auth`, `home` and `mcp`, plus any applet label used by the configured MCP origin. Every host under the suffix is public and the router gates what needs gating: a user for `private` and `family` applets, for the editor on `app.<suffix>` and for the launcher on `home.<suffix>`, a bearer key on `api.<suffix>`, an OAuth access token on `mcp.<suffix>`. The bundler, the browser and the editor have no route; they exist only because the router's `services` name them, which is why the router deploys last.
 
@@ -108,7 +108,7 @@ Account and zone:
 - Workers Paid plan, by hand: outbound email to unverified addresses and the bundler's 60-second CPU limit need it
 - a zone on Cloudflare DNS for the host suffix, by hand
 - a proxied wildcard `AAAA` record, name `*`, value `100::`, by hand: the wildcard route needs a record to attach to
-- `wrangler login` on the host, by hand: every deploy step runs through wrangler with that login
+- `cf auth login` on the host, by hand: every deploy step and account call runs through `cf` with that login; wrangler is only the bundler `cf` calls
 
 Compute:
 
@@ -116,7 +116,7 @@ Compute:
 - worker `applets-browser`, deploy: no route, the Browser Run binding `BROWSER`, `nodejs_compat`
 - worker `applets-editor`, deploy: no route, static assets from the Vite build in `packages/editor/dist`, so the build runs first
 - worker `applets-router`, deploy: last of the three, because its service bindings to the other two resolve at deploy
-- route `*<suffix>/*` on the zone to `applets-router`, deploy: written into the git-ignored `wrangler.local.jsonc`, since the suffix is never committed
+- route `*<suffix>/*` on the zone to `applets-router`, deploy: the router's `cloudflare.config.ts` adds it in `production` mode from the host's `APPLET_HOST_SUFFIX`, since the suffix is never committed
 - cron trigger `*/10 * * * *` on the router, deploy
 - Durable Object namespace `Supervisor` on the router, SQLite-backed, migration tag `v1`, deploy: deleting the router deletes every applet's storage with it
 - worker loader binding `LOADER` on the router, deploy: loads applet code from registry rows, no resource behind it
@@ -125,7 +125,7 @@ Compute:
 
 Storage:
 
-- D1 database `applets-registry`, binding `REGISTRY`, deploy: created when missing, and its id spliced into `wrangler.local.jsonc`; the CLI applies pending migrations before starting or deploying the router
+- D1 database `applets-registry`, binding `REGISTRY`, deploy: created when missing, and its id passed to the router's config as `APPLETS_REGISTRY_ID`; the CLI applies pending migrations before starting or deploying the router
 - R2 bucket `applets-blobs`, binding `APPLET_BLOBS` on the router, deploy: applet blobs and received attachments
 - R2 bucket `applets-deps`, binding `DEPS` on the bundler, deploy: the npm package cache
 
@@ -137,7 +137,7 @@ Email:
 - catch-all routing rule with the action send to worker `applets-router`, deploy: set and turned on after every router deploy through the Cloudflare API, because Cloudflare turns it off when the router is deleted. No other rule or destination address is touched
 - the owner's address as a verified destination address, by hand and optional: mail to it is then free
 
-Secrets, all on the router, deploy, from the host-only `secrets.env` through `wrangler secret bulk`:
+Secrets, all on the router, deploy, from the host-only `secrets.env` through `cf workers secrets bulk`:
 
 - from the file: `BETTER_AUTH_SECRET`, `EMAIL_FROM`, `OWNER_EMAIL`, `OPENROUTER_API_KEY`
 - derived: `ADMIN_TOKEN_HASH` from `ADMIN_TOKEN`, `HOST_SUFFIX` and `AUTH_URL` from `APPLET_HOST_SUFFIX`
@@ -182,7 +182,7 @@ The `/main.js` branch is only generated when the applet has a `client/` director
 
 ## The router
 
-`packages/router/wrangler.jsonc` is static and committed: the loader binding, the registry D1 with no id, the `Supervisor` Durable Object, the service bindings to the bundler, the browser and the editor, and a cron every 10 minutes that vacuums old rows. It has no route, because with one `wrangler dev` rewrites the request host and the router routes by host. `vp run deploy` writes a copy beside it as `wrangler.local.jsonc`, git-ignored, with the wildcard route and the registry's database id spliced in, and deploys that. The deploy looks the `applets-registry` database up by name and creates it when the account has none, so no resource id is committed anywhere. It names the id itself because wrangler would otherwise inherit it from the deployed router's settings, which fails once that database has been deleted. Wrangler creates the two R2 buckets on the first deploy and finds them by name after that.
+`packages/router/cloudflare.config.ts` is committed and reads the host's settings: the loader binding, the registry D1 by name with the id from `APPLETS_REGISTRY_ID`, the `Supervisor` Durable Object as an export, the service bindings to the bundler, the browser and the editor, and a cron every 10 minutes that vacuums old rows. The wildcard route is added only in `production` mode, which `vp run deploy` passes, because local dev rewrites the request host and the router routes by host. The deploy looks the `applets-registry` database up by name and creates it when the account has none, so no resource id is committed anywhere. It names the id itself because the deploy would otherwise inherit it from the deployed router's settings, which fails once that database has been deleted. The two R2 buckets are created on the first deploy and found by name after that. `wrangler.config.ts` beside it holds what wrangler, the bundler `cf` calls, needs: the `Text` rule for `.md` imports.
 
 Request flow for `<applet>.<suffix>/path`:
 
@@ -323,13 +323,13 @@ There is no separate development log. Every deploy is a real version on the live
 
 ## Secrets
 
-Platform secrets are Worker secrets on the router. `vp run deploy` reads them from the host-only `secrets.env` and, after the router deploys, pipes them as JSON to `wrangler secret bulk`, so they never touch a file. The set is `ADMIN_TOKEN`, stored as its hash only, `BETTER_AUTH_SECRET`, `EMAIL_FROM`, `OWNER_EMAIL`, `OPENROUTER_API_KEY`, and the two derived values `HOST_SUFFIX` and `AUTH_URL`. Secrets and vars look the same to the worker, and the committed `wrangler.jsonc` carries neither.
+Platform secrets are Worker secrets on the router. `vp run deploy` reads them from the host-only `secrets.env` and, after the router deploys, passes them as JSON to `cf workers secrets bulk`, so they never touch a file. The set is `ADMIN_TOKEN`, stored as its hash only, `BETTER_AUTH_SECRET`, `EMAIL_FROM`, `OWNER_EMAIL`, `OPENROUTER_API_KEY`, and the two derived values `HOST_SUFFIX` and `AUTH_URL`. Secrets and vars look the same to the worker, and the committed `cloudflare.config.ts` carries neither.
 
 `secrets.env.example` lists what the file holds. One entry is host-specific, not secret:
 
 - `APPLET_HOST_SUFFIX`: with it set the scripts talk to `https://api<suffix>` and the router's `AUTH_URL` becomes `https://auth<suffix>`; without it everything is `.localhost` on port 8787. A platform deploy refuses the `.localhost` suffix
 
-`wrangler` takes the account from its own login, so no account id is stored. The few Cloudflare API calls the scripts make themselves, in `packages/cli/src/cloudflare.ts`, run with the token `wrangler auth token` prints. That login has no DNS scope, so the one thing a deploy cannot create is the wildcard DNS record the route attaches to: a proxied `AAAA` record, name `*`, value `100::`, added once in the Cloudflare dashboard.
+`cf` takes the account from its own login, so no account id or token is stored. The account calls beside the deploy, in `packages/cli/src/cloudflare.ts`, run as `cf` commands with JSON output. That login has no DNS scope, so the one thing a deploy cannot create is the wildcard DNS record the route attaches to: a proxied `AAAA` record, name `*`, value `100::`, added once in the Cloudflare dashboard.
 
 For the local platform, `vp run dev` writes the same set to `packages/router/.dev.vars`, git-ignored, always with the `.localhost` suffix whatever `secrets.env` names.
 

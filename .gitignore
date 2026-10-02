@@ -31,9 +31,9 @@ yarn-debug.log*
 yarn-error.log*
 .vite-hooks/_/
 
-wrangler.local.jsonc
 .dev.vars
 .wrangler*/
+.cloudflare/
 
 __screenshots__/
 .vitest-attachments/

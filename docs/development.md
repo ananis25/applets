@@ -10,8 +10,8 @@ Local development needs the first two steps. Deploying needs all of them, once p
 
 1. `vp install`.
 2. Copy `secrets.env.example` to `secrets.env` and fill it in. It is never committed.
-3. `vpx wrangler login`. Every deploy step, and the few Cloudflare API calls the scripts make themselves, run with that login.
-4. In the Cloudflare dashboard, on the zone of the host suffix, add one DNS record: type `AAAA`, name `*`, value `100::`, proxied. The wildcard route needs a record to attach to, and wrangler's login has no DNS permission, so no script can add it.
+3. Install the `cf` CLI and run `cf auth login`. Every deploy step and every account call runs with that login. Wrangler is only the bundler `cf` calls, and is never logged in to.
+4. In the Cloudflare dashboard, on the zone of the host suffix, add one DNS record: type `AAAA`, name `*`, value `100::`, proxied. The wildcard route needs a record to attach to, and the `cf` login has no DNS permission, so no script can add it.
 5. For email, in the same dashboard: onboard the zone in Email Service for sending, enable Email Routing, and optionally verify the owner's address as a destination, so mail to it is free. The deploy sets the catch-all rule itself.
 
 The account needs the Workers Paid plan. [docs/architecture.md](docs/architecture.md) lists every resource under "Infrastructure inventory".
@@ -23,13 +23,14 @@ All from this directory, all scripts in `package.json`, run with `vp run`.
 | Command | Does |
 | --- | --- |
 | `vp install` | install the workspace |
-| `vp run check` | typecheck, lint and format every package; `vp check --fix` writes the fixes |
+| `vp run check` | check types, lint and formatting in every package |
+| `vp run check:fix` | apply lint and formatting fixes, then check types |
 | `vp run test` | the test suites |
 | `vp run dev` | the local platform and the editor page against it, see "Local development" |
 | `vp run dev:remote` | the editor page on localhost against the deployed platform, see "Local development" |
 | `vp run push <path>` | upload one applet directory to the deployed platform; `push:local` for the local one. A new applet is `private`, and `--visibility family` or `--visibility public` opens this one; without the flag a push leaves the setting alone |
 | `vp run remove <name>` | delete one applet from the deployed platform with its versions, storage and blobs; `remove:local` for the local one |
-| `vp run deploy` | build the editor, `wrangler deploy` the bundler, the browser, the editor and the router, upload the router's secrets, and point the mail catch-all rule at the router. The platform deploys when the platform changes, not when an applet does |
+| `vp run deploy` | build the editor, `cf deploy` the bundler, the browser, the editor and the router, upload the router's secrets, and point the mail catch-all rule at the router. The platform deploys when the platform changes, not when an applet does |
 | `vp run deploy <worker>...` | the same for only the workers named, any of `bundler`, `browser`, `editor` and `router`, always in that order |
 | `vp run ship` | `deploy`, then push `examples/preact-app` and `examples/mailbox` as public, each checked to answer 2xx |
 | `vp run templates` | embed the directories under `examples/` into `packages/api/src/templates.json` as the templates a new applet starts from, after changing one |
@@ -64,24 +65,24 @@ There are two ways to run the platform on your machine. Both open the same edito
 | | `vp run dev` | `vp run dev:remote` |
 | --- | --- | --- |
 | Use it for | work on the router, the bundler or `@std`, with or without the page | work on the editor page with real data |
-| Router and bundler | local, one `wrangler dev` on port 8787 | the deployed ones |
+| Router and bundler | local, one `cf dev` each, the router on port 8787 | the deployed ones |
 | Registry, blobs, applet storage | local files under `.wrangler/` | the real D1 database, R2 buckets and Durable Objects |
 | Touches the Cloudflare account | never | every read and write, including Deploy and Remove |
-| A backend change shows up | on save, `wrangler dev` reloads | after `vp run deploy` |
+| A backend change shows up | on save, `cf dev` reloads | after `vp run deploy` |
 | Needs | `secrets.env` | `secrets.env` with the public suffix, and a deployed platform |
 
 ### Everything local, `vp run dev`
 
 `vp run dev` starts two processes and stops both when either exits:
 
-- `wrangler dev` with the router, the bundler and the browser on port 8787. D1, R2 and Durable Object state are local files under `.wrangler/`. Only the browser's Browser Run binding reaches the account, as a remote binding
+- one `cf dev` each for the router, the bundler and the browser, the router on port 8787, joined over the local dev registry. D1, R2 and Durable Object state are local files under `packages/router/.wrangler/`. Only the browser's Browser Run binding reaches the account, as a remote binding
 - the editor page on Vite, which proxies `/api/` to `http://api.localhost:8787` with the admin token
 
 `<applet>.localhost` resolves to loopback in every browser, so the router routes by hostname with no DNS. Before it starts, the script writes `packages/router/.dev.vars` from `secrets.env`, always with the `.localhost` suffix whatever the file names.
 
 The local registry starts empty. `vp run push:local <path>` uploads one directory, `examples/preact-app` to start.
 
-Received mail can be simulated locally: wrangler's `POST http://localhost:8787/cdn-cgi/handler/email?from=<sender>&to=<applet>@localhost` with an RFC 822 message as the body reaches the router's `email` handler and the applet named by the local part. Sent mail is accepted locally and goes nowhere.
+Received mail can be simulated locally: the dev server's `POST http://localhost:8787/cdn-cgi/handler/email?from=<sender>&to=<applet>@localhost` with an RFC 822 message as the body reaches the router's `email` handler and the applet named by the local part. Sent mail is accepted locally and goes nowhere.
 
 Nothing local asks for sign-in. The script writes the owner's email to `.dev.vars` as `DEV_USER`, and the local router treats every request without a bearer key as that user, who is the admin. So a private applet answers `curl http://<applet>.localhost:8787/` and opens in a browser. The router only reads `DEV_USER` when its suffix is `.localhost`, and a deploy never uploads it.
 
@@ -89,7 +90,7 @@ To reset the local state, stop `vp run dev` and delete `packages/router/.wrangle
 
 The editor tests stub `fetch` with rows in the contract's shape. The client decodes every answer against `packages/api`, so a stub missing one field is a refused response and the page shows the decode error; when a fixture breaks, every test waits out its matcher timeout, which looks like a stall. Run one test with `-t` first.
 
-The sign-in flow itself does not work locally, because `*.localhost` cannot share a cookie across subdomains. So the magic link, the 401 and the redirect for a missing session, and the `users` table are only checked on the deployed platform. The local `wrangler dev` also leaves the editor worker out: the Vite page is the local editor.
+The sign-in flow itself does not work locally, because `*.localhost` cannot share a cookie across subdomains. So the magic link, the 401 and the redirect for a missing session, and the `users` table are only checked on the deployed platform. The local platform also leaves the editor worker out: the Vite page is the local editor.
 
 ### The page against the deployed platform, `vp run dev:remote`
 
@@ -122,5 +123,5 @@ applets/
 
 - [Cloudflare dynamic workers and facets](https://developers.cloudflare.com/dynamic-workers/)
 - [@cloudflare/worker-bundler](https://github.com/cloudflare/agents/tree/main/packages/worker-bundler)
-- [Wrangler configuration](https://developers.cloudflare.com/workers/wrangler/configuration/)
+- [cf CLI](https://developers.cloudflare.com/workers/cf/)
 - [Better Auth](https://www.better-auth.com/docs)

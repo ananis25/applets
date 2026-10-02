@@ -6,6 +6,9 @@ export const repoRoot = path.join(import.meta.dirname, "..", "..", "..");
 
 export const secretsFile = path.join(repoRoot, "secrets.env");
 
+/** The registry's id in the local simulation, where `cf` wants an id to key the database by. Any fixed one does. */
+export const localRegistryId = "00000000-0000-4000-8000-000000000001";
+
 /** Reads KEY=value lines, then applies environment overrides. The file is optional when the environment supplies the settings. */
 export function readSettings(): Map<string, string> {
   const contents = existsSync(secretsFile) ? readFileSync(secretsFile, "utf8") : "";
@@ -26,7 +29,7 @@ export function readSettings(): Map<string, string> {
   return settings;
 }
 
-/** An origin on the selected platform, using Wrangler's port locally. */
+/** An origin on the selected platform, using the local dev server's port. */
 export function originFor(host: string, suffix: string): string {
   return suffix === ".localhost" ? `http://${host}${suffix}:8787` : `https://${host}${suffix}`;
 }
